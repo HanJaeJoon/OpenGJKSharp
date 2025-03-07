@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>0.0.3</Version>
+    <Authors>HanJaeJoon</Authors>
+    <Description>A library of GJK algorithms implemented in C#. Designed based on the original openGJK.</Description>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/HanJaeJoon/OpenGJKSharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/HanJaeJoon/OpenGJKSharp.git</RepositoryUrl>
+    <PackageTags>GJK, Gilbert-Johnson-Keerthi, Algorithm, 3D, CollisionDetection, CSharp, .NET</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
