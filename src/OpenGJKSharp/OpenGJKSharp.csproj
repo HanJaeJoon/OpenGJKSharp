@@ -4,7 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <Authors>HanJaeJoon</Authors>
     <Description>A library of GJK algorithms implemented in C#. Designed based on the original openGJK.</Description>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\example.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
