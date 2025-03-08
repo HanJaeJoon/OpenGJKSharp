@@ -55,4 +55,4 @@ Console.WriteLine($"Collision detected: {hasCollision}"); // Outputs: true
 
 The following image illustrates the collision between the two cubes:
 
-![Collision Example](./example.png)
+![Collision Example](https://raw.githubusercontent.com/HanJaeJoon/OpenGJKSharp/refs/heads/main/example.png)
