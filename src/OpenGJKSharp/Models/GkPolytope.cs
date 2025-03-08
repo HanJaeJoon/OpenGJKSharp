@@ -11,7 +11,7 @@ public class GkPolytope
     /// <summary>
     /// Number of points defining the polytope.
     /// </summary>
-    public int NumPoints;
+    public required int NumPoints;
 
     /// <summary>
     /// Furthest point returned by the support function and updated at each GJK-iteration.

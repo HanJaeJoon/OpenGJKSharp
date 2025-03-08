@@ -4,11 +4,42 @@ namespace OpenGJKSharp.Tests;
 
 public class OpenGjkSharpTests
 {
+    [Fact]
+    public void Should_ReturnTrue_When_Two3DCubesOverlapping()
+    {
+        var a = new Vector3[]
+        {
+            new(0, 0, 0),
+            new(1, 0, 0),
+            new(0, 1, 0),
+            new(1, 1, 0),
+            new(0, 0, 1),
+            new(1, 0, 1),
+            new(0, 1, 1),
+            new(1, 1, 1),
+        };
+        var b = new Vector3[]
+        {
+            new(0.5f, 0.5f, 0),
+            new(1.5f, 0.5f, 0),
+            new(0.5f, 1.5f, 0),
+            new(1.5f, 1.5f, 0),
+            new(0.5f, 0.5f, 1),
+            new(1.5f, 0.5f, 1),
+            new(0.5f, 1.5f, 1),
+            new(1.5f, 1.5f, 1),
+        };
+
+        bool hasCollision = OpenGJKSharp.HasCollision(a, b);
+
+        Assert.True(hasCollision);
+    }
+
     /// <summary>
     /// https://github.com/MattiaMontanari/openGJK/issues/52
     /// </summary>
     [Fact]
-    public void Should_ReturnTrue_When_3DTwoCubesOverlapping()
+    public void Should_ReturnTrue_When_Two3DCubesSharingSameCenter()
     {
         var ia = new double[3, 8] {
             { 90945.08, 91077.46, 91454.92, 91322.54, 90945.08, 91077.46, 91454.92, 91322.54 },
@@ -144,20 +175,8 @@ public class OpenGjkSharpTests
             new(15612f, 48644f),
         ];
 
-        var distance = OpenGJKSharp.CsFunction(a.Length, GetArray(a), b.Length, GetArray(b));
+        bool hasCollision = OpenGJKSharp.HasCollision(a, b);
 
-        static double[,] GetArray(Vector2[] points)
-        {
-            var array = new double[3, points.Length];
-            for (int i = 0; i < points.Length; i++)
-            {
-                var point = points[i];
-                array[0, i] = point.X;
-                array[1, i] = point.Y;
-            }
-            return array;
-        }
-
-        Assert.Equal(0, distance);
+        Assert.True(hasCollision);
     }
 }

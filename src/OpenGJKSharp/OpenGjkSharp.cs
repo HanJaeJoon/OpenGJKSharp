@@ -1,10 +1,72 @@
 using OpenGJKSharp.Models;
+using System.Numerics;
 
 namespace OpenGJKSharp;
 
 public static class OpenGJKSharp
 {
     private const double _gkEpsilon = 2.2204460492503131e-16; // DBL_EPSILON
+    private const double _presicion = 1e-6;
+
+    public static bool HasCollision(Vector3[] a, Vector3[] b, double precision = _presicion)
+    {
+        if (precision < 0)
+        {
+            precision = _presicion;
+        }
+
+        double distance = ComputeMinimumDistance(GetGkPolytope(a), GetGkPolytope(b));
+
+        return distance <= precision;
+
+        static GkPolytope GetGkPolytope(Vector3[] points)
+        {
+            var coordinates = new double[points.Length][];
+
+            for (int i = 0; i < points.Length; i++)
+            {
+                var point = points[i];
+                coordinates[i] = [point.X, point.Y, point.Z];
+            }
+
+            return new GkPolytope()
+            {
+                NumPoints = points.Length,
+                Coord = coordinates,
+            };
+        }
+    }
+
+    public static bool HasCollision(Vector2[] a, Vector2[] b, double precision = _presicion)
+    {
+        if (precision < 0)
+        {
+            precision = _presicion;
+        }
+
+        double distance = ComputeMinimumDistance(GetGkPolytope(a), GetGkPolytope(b));
+
+        return distance <= precision;
+
+        static GkPolytope GetGkPolytope(Vector2[] points)
+        {
+            var coordinates = new double[points.Length][];
+
+            for (int i = 0; i < points.Length; i++)
+            {
+                var point = points[i];
+                coordinates[i] = [point.X, point.Y, 0];
+            }
+
+            return new GkPolytope()
+            {
+                NumPoints = points.Length,
+                Coord = coordinates,
+            };
+        }
+    }
+
+    #region OpenGJK ported from https://github.com/MattiaMontanari/openGJK
 
     /// <summary>
     /// Invoke this function from C# applications
@@ -39,15 +101,13 @@ public static class OpenGJKSharp
             NumPoints = nCoordsB
         };
 
-        var s = new GkSimplex();
-
         // Compute squared distance using GJK algorithm
-        double distance = ComputeMinimumDistance(bd1, bd2, s);
+        double distance = ComputeMinimumDistance(bd1, bd2);
 
         return distance;
     }
 
-    public static double ComputeMinimumDistance(GkPolytope bd1, GkPolytope bd2, GkSimplex s)
+    public static double ComputeMinimumDistance(GkPolytope bd1, GkPolytope bd2)
     {
         uint k = 0; // Iteration counter
         const int mk = 25; // Maximum number of GJK iterations
@@ -66,7 +126,10 @@ public static class OpenGJKSharp
         v[2] = bd1.Coord[0][2] - bd2.Coord[0][2];
 
         // Initialize simplex
-        s.NVrtx = 1;
+        var s = new GkSimplex
+        {
+            NVrtx = 1
+        };
         for (int t = 0; t < 3; ++t)
         {
             s.Vrtx[0, t] = v[t];
@@ -1187,4 +1250,6 @@ public static class OpenGJKSharp
             smp.Witnesses[1, t] = w01[t] * a0 + w11[t] * a1 + w21[t] * a2 + w31[t] * a3;
         }
     }
+
+    #endregion
 }
