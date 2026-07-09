@@ -24,7 +24,7 @@ public class GkSimplex
 
     /// <summary>
     /// Witness points (closest points on each body).
-    /// After calling <see cref="OpenGJKSharp.ComputeMinimumDistance(GkPolytope, GkPolytope, GkSimplex)"/>:
+    /// After calling <see cref="OpenGjk.ComputeMinimumDistance(GkPolytope, GkPolytope, GkSimplex)"/>:
     /// Witnesses[0, *] contains the closest point on the first body,
     /// Witnesses[1, *] contains the closest point on the second body.
     /// These are computed using barycentric coordinates from the final simplex vertices.

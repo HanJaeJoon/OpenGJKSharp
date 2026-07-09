@@ -31,7 +31,7 @@ public class OpenGjkSharpTests
             new(1.5f, 1.5f, 1),
         };
 
-        bool hasCollision = OpenGJKSharp.HasCollision(a, b);
+        bool hasCollision = OpenGjk.HasCollision(a, b);
 
         Assert.True(hasCollision);
     }
@@ -54,7 +54,9 @@ public class OpenGjkSharpTests
             { 300, 300, 300, 300, 0, 0, 0, 0, },
         };
 
-        var distance = OpenGJKSharp.CsFunction(ia.GetLength(1), ia, ib.GetLength(1), ib);
+#pragma warning disable CS0618 // Intentionally testing the obsolete compatibility API
+        var distance = OpenGjk.CsFunction(ia.GetLength(1), ia, ib.GetLength(1), ib);
+#pragma warning restore CS0618
 
         Assert.Equal(0, distance);
     }
@@ -176,7 +178,7 @@ public class OpenGjkSharpTests
             new(15612f, 48644f),
         ];
 
-        bool hasCollision = OpenGJKSharp.HasCollision(a, b);
+        bool hasCollision = OpenGjk.HasCollision(a, b);
 
         Assert.True(hasCollision);
     }
@@ -200,7 +202,7 @@ public class OpenGjkSharpTests
         // Same cube shifted by +0.5 along x only: minimum penetration is 0.5 along x
         var b = a.Select(p => p + new Vector3(0.5f, 0, 0)).ToArray();
 
-        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+        double distance = OpenGjk.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
 
         Assert.True(distance < 0);
         Assert.Equal(0.5, -distance, 6);
@@ -227,7 +229,7 @@ public class OpenGjkSharpTests
         // Same cube shifted by +2 along x: separated by 1
         var b = a.Select(p => p + new Vector3(2f, 0, 0)).ToArray();
 
-        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+        double distance = OpenGjk.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
 
         Assert.Equal(1.0, distance, 6);
         Assert.Equal(1.0, contactNormal.X, 6);
@@ -251,7 +253,7 @@ public class OpenGjkSharpTests
         // Shifted by +0.2 along x: minimum penetration is 0.8 along x
         var b = a.Select(p => p + new Vector3(0.2f, 0, 0)).ToArray();
 
-        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+        double distance = OpenGjk.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
 
         Assert.True(distance < 0);
         Assert.Equal(0.8, -distance, 6);
@@ -264,7 +266,7 @@ public class OpenGjkSharpTests
         Vector3[] a = UnitCube();
         Vector3[] b = [.. a.Select(p => p + new Vector3(3f, 0, 0))];
 
-        bool hasCollision = OpenGJKSharp.HasCollision(a, b);
+        bool hasCollision = OpenGjk.HasCollision(a, b);
 
         Assert.False(hasCollision);
     }
@@ -275,7 +277,7 @@ public class OpenGjkSharpTests
         Vector2[] a = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
         Vector2[] b = [new(2, 2), new(3, 2), new(3, 3), new(2, 3)];
 
-        bool hasCollision = OpenGJKSharp.HasCollision(a, b);
+        bool hasCollision = OpenGjk.HasCollision(a, b);
 
         Assert.False(hasCollision);
     }
@@ -287,7 +289,7 @@ public class OpenGjkSharpTests
         Vector3[] b = [.. a.Select(p => p + new Vector3(2f, 0, 0))];
 
         var simplex = new GkSimplex();
-        double distance = OpenGJKSharp.ComputeMinimumDistance(ToGkPolytope(a), ToGkPolytope(b), simplex);
+        double distance = OpenGjk.ComputeMinimumDistance(ToGkPolytope(a), ToGkPolytope(b), simplex);
 
         Assert.Equal(1.0, distance, 6);
 
@@ -297,18 +299,33 @@ public class OpenGjkSharpTests
     }
 
     [Fact]
-    public void Should_ReturnZeroPenetration_When_CubesAreIdentical()
+    public void Should_ReturnFullPenetrationDepth_When_CubesAreIdentical()
     {
-        // Identical cubes are a degenerate case for GJK/EPA: the initial search
-        // direction (vertex A[0] - vertex B[0]) is the zero vector, so the reference
-        // implementation reports a penetration depth of zero.
+        // Identical cubes make the initial GJK search direction
+        // (vertex A[0] - vertex B[0]) the zero vector, which degenerates the simplex.
+        // EPA must still recover the true penetration depth of 1.
         Vector3[] a = UnitCube();
         Vector3[] b = UnitCube();
 
-        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out _);
+        double distance = OpenGjk.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
 
-        Assert.True(Math.Abs(distance) < 1e-6);
-        Assert.True(OpenGJKSharp.HasCollision(a, b));
+        Assert.Equal(1.0, -distance, 6);
+        Assert.Equal(1.0, contactNormal.Length(), 5);
+        Assert.True(OpenGjk.HasCollision(a, b));
+    }
+
+    [Fact]
+    public void Should_ReturnPenetrationDepth_When_CubeIsNestedSharingACorner()
+    {
+        // a = [0, 1]^3 fully inside b = [0, 2]^3, sharing the corner at the origin.
+        // The first vertices coincide, so the initial GJK direction is the zero vector.
+        Vector3[] a = UnitCube();
+        Vector3[] b = [.. UnitCube().Select(p => p * 2f)];
+
+        double distance = OpenGjk.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+
+        Assert.Equal(1.0, -distance, 6);
+        Assert.Equal(1.0, contactNormal.Length(), 5);
     }
 
     [Fact]
@@ -317,7 +334,7 @@ public class OpenGjkSharpTests
         Vector3[] a = UnitCube();
         Vector3[] b = [.. a.Select(p => p + new Vector3(1f, 0, 0))];
 
-        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out _);
+        double distance = OpenGjk.ComputeCollisionInformation(a, b, out _);
 
         Assert.True(Math.Abs(distance) < 1e-6);
     }
@@ -330,12 +347,279 @@ public class OpenGjkSharpTests
         // Shifted by (+0.5, +0.5, 0): minimum penetration is 0.5 along x or y
         Vector3[] b = [.. a.Select(p => p + new Vector3(0.5f, 0.5f, 0))];
 
-        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+        double distance = OpenGjk.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
 
         Assert.True(distance < 0);
         Assert.Equal(0.5, -distance, 6);
         Assert.Equal(1.0, Math.Max(Math.Abs(contactNormal.X), Math.Abs(contactNormal.Y)), 6);
         Assert.Equal(0.0, contactNormal.Z, 6);
+    }
+
+    [Fact]
+    public void Should_ComputeMinimumDistance_When_GivenVector3Arrays()
+    {
+        Vector3[] a = UnitCube();
+        Vector3[] b = [.. a.Select(p => p + new Vector3(3f, 0, 0))];
+
+        double distance = OpenGjk.ComputeMinimumDistance(a, b);
+
+        Assert.Equal(2.0, distance, 6);
+    }
+
+    [Fact]
+    public void Should_ComputeWitnessPoints_When_GivenVector3Arrays()
+    {
+        Vector3[] a = UnitCube();
+        Vector3[] b = [.. a.Select(p => p + new Vector3(3f, 0, 0))];
+
+        double distance = OpenGjk.ComputeMinimumDistance(a, b, out Vector3 closestA, out Vector3 closestB);
+
+        Assert.Equal(2.0, distance, 6);
+        Assert.Equal(1.0, closestA.X, 5);
+        Assert.Equal(3.0, closestB.X, 5);
+        Assert.Equal(distance, (closestB - closestA).Length(), 5);
+    }
+
+    [Fact]
+    public void Should_ReturnConsistentWitnessPoints_For_RandomSeparatedClouds()
+    {
+        var random = new Random(12345);
+
+        for (int iteration = 0; iteration < 200; iteration++)
+        {
+            Vector3[] a = RandomCloud(random, new Vector3(0, 0, 0));
+            Vector3[] b = RandomCloud(random, new Vector3(5, 0, 0));
+
+            double distance = OpenGjk.ComputeMinimumDistance(a, b, out Vector3 closestA, out Vector3 closestB);
+
+            Assert.True(double.IsFinite(distance), $"iteration {iteration}: distance is not finite");
+            Assert.True(float.IsFinite(closestA.X) && float.IsFinite(closestA.Y) && float.IsFinite(closestA.Z),
+                $"iteration {iteration}: closestA is not finite");
+            Assert.True(float.IsFinite(closestB.X) && float.IsFinite(closestB.Y) && float.IsFinite(closestB.Z),
+                $"iteration {iteration}: closestB is not finite");
+            Assert.Equal(distance, (closestB - closestA).Length(), 3);
+        }
+
+        static Vector3[] RandomCloud(Random random, Vector3 center) =>
+            [.. Enumerable.Range(0, 20).Select(_ => center + new Vector3(
+                (float)random.NextDouble(),
+                (float)random.NextDouble(),
+                (float)random.NextDouble()))];
+    }
+
+    [Fact]
+    public void Should_ReturnConsistentWitnessPoints_When_PolytopeHasDuplicatedVertices()
+    {
+        // Duplicated vertices can degenerate the simplex (identical simplex corners),
+        // which exercises the degenerate branches of the witness computation.
+        Vector3[] a = [new(0, 0, 0), new(0, 0, 0), new(1, 0, 0), new(1, 0, 0), new(0.5f, 1, 0), new(0.5f, 1, 0)];
+        Vector3[] b = [new(3, 0, 0), new(3, 0, 0), new(4, 0, 0), new(4, 0, 0), new(3.5f, 1, 0), new(3.5f, 1, 0)];
+
+        double distance = OpenGjk.ComputeMinimumDistance(a, b, out Vector3 closestA, out Vector3 closestB);
+
+        Assert.Equal(2.0, distance, 6);
+        Assert.Equal(distance, (closestB - closestA).Length(), 5);
+    }
+
+    [Fact]
+    public void Should_ThrowArgumentOutOfRangeException_When_PrecisionIsNegative()
+    {
+        Vector3[] a = UnitCube();
+        Vector3[] b = [.. a.Select(p => p + new Vector3(3f, 0, 0))];
+        Vector2[] a2 = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
+        Vector2[] b2 = [.. a2.Select(p => p + new Vector2(3f, 0))];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => OpenGjk.HasCollision(a, b, precision: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => OpenGjk.HasCollision(a2, b2, precision: -1));
+    }
+
+    [Fact]
+    public void Should_PointContactNormalFromFirstBodyToSecond_When_Separated()
+    {
+        Vector3[] a = UnitCube();
+        Vector3[] b = [.. a.Select(p => p + new Vector3(3f, 0, 0))];
+
+        OpenGjk.ComputeCollisionInformation(a, b, out Vector3 nAb);
+        OpenGjk.ComputeCollisionInformation(b, a, out Vector3 nBa);
+
+        Assert.Equal(1.0, nAb.X, 5);
+        Assert.Equal(-1.0, nBa.X, 5);
+    }
+
+    [Fact]
+    public void Should_ComputeMinimumDistance_When_GivenVector2Arrays()
+    {
+        Vector2[] a = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
+        Vector2[] b = [.. a.Select(p => p + new Vector2(3f, 0))];
+
+        double distance = OpenGjk.ComputeMinimumDistance(a, b);
+
+        Assert.Equal(2.0, distance, 6);
+    }
+
+    [Fact]
+    public void Should_ComputeWitnessPoints_When_GivenVector2Arrays()
+    {
+        Vector2[] a = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
+        Vector2[] b = [.. a.Select(p => p + new Vector2(3f, 0))];
+
+        double distance = OpenGjk.ComputeMinimumDistance(a, b, out Vector2 closestA, out Vector2 closestB);
+
+        Assert.Equal(2.0, distance, 6);
+        Assert.Equal(1.0, closestA.X, 5);
+        Assert.Equal(3.0, closestB.X, 5);
+        Assert.Equal(distance, (closestB - closestA).Length(), 5);
+    }
+
+    [Fact]
+    public void Should_ThrowArgumentException_When_CoordRowIsShorterThanThree()
+    {
+        var invalid = new GkPolytope { NumPoints = 1, Coord = [[1.0, 2.0]] };
+        var valid = new GkPolytope { NumPoints = 1, Coord = [[0.0, 0.0, 0.0]] };
+
+        Assert.Throws<ArgumentException>(() => OpenGjk.ComputeMinimumDistance(invalid, valid));
+        Assert.Throws<ArgumentException>(() => OpenGjk.ComputeMinimumDistance(valid, invalid));
+    }
+
+    [Fact]
+    public void Should_ComputeAccuratePenetrationDepth_For_RandomOverlappingBoxes()
+    {
+        var random = new Random(888);
+        int tested = 0;
+
+        for (int i = 0; i < 500; i++)
+        {
+            Vector3 min1 = NextVector(random) - new Vector3(0.5f);
+            Vector3 max1 = min1 + NextVector(random) + new Vector3(0.5f);
+            Vector3 min2 = NextVector(random) - new Vector3(0.5f);
+            Vector3 max2 = min2 + NextVector(random) + new Vector3(0.5f);
+
+            double ox = Math.Min(max1.X, max2.X) - Math.Max(min1.X, min2.X);
+            double oy = Math.Min(max1.Y, max2.Y) - Math.Max(min1.Y, min2.Y);
+            double oz = Math.Min(max1.Z, max2.Z) - Math.Max(min1.Z, min2.Z);
+            if (ox <= 0.01 || oy <= 0.01 || oz <= 0.01)
+            {
+                continue; // Skip separated or near-touching pairs
+            }
+
+            tested++;
+
+            // Minimum translation to separate along an axis is the distance needed to
+            // push one box fully past the other, not the projected overlap length
+            // (they differ when one box's projection contains the other's).
+            double sx = Math.Min(max1.X - min2.X, max2.X - min1.X);
+            double sy = Math.Min(max1.Y - min2.Y, max2.Y - min1.Y);
+            double sz = Math.Min(max1.Z - min2.Z, max2.Z - min1.Z);
+            double expected = Math.Min(sx, Math.Min(sy, sz));
+
+            double actual = OpenGjk.ComputeCollisionInformation(Box(min1, max1), Box(min2, max2), out _);
+
+            Assert.True(Math.Abs(-actual - expected) < 1e-3,
+                $"pair {i}: depth = {-actual}, expected = {expected}");
+        }
+
+        Assert.True(tested > 100, $"only {tested} overlapping pairs generated");
+
+        static Vector3 NextVector(Random random) => new(
+            (float)random.NextDouble(),
+            (float)random.NextDouble(),
+            (float)random.NextDouble());
+
+        static Vector3[] Box(Vector3 min, Vector3 max) =>
+        [
+            new(min.X, min.Y, min.Z), new(max.X, min.Y, min.Z), new(min.X, max.Y, min.Z), new(max.X, max.Y, min.Z),
+            new(min.X, min.Y, max.Z), new(max.X, min.Y, max.Z), new(min.X, max.Y, max.Z), new(max.X, max.Y, max.Z),
+        ];
+    }
+
+    [Fact]
+    public void Should_ThrowArgumentException_When_CoordinatesAreNotFinite()
+    {
+        Vector3[] cube = UnitCube();
+        Vector3[] withNaN = [new(float.NaN, 0, 0), new(1, 0, 0), new(0, 1, 0), new(0, 0, 1)];
+        Vector3[] withInfinity = [new(float.PositiveInfinity, 0, 0), new(1, 0, 0), new(0, 1, 0), new(0, 0, 1)];
+        Vector2[] withNaN2D = [new(float.NaN, 0), new(1, 0), new(0, 1)];
+
+        Assert.Throws<ArgumentException>(() => OpenGjk.HasCollision(withNaN, cube));
+        Assert.Throws<ArgumentException>(() => OpenGjk.HasCollision(cube, withInfinity));
+        Assert.Throws<ArgumentException>(() => OpenGjk.HasCollision(withNaN2D, [new(0, 0), new(1, 1)]));
+        Assert.Throws<ArgumentException>(() => OpenGjk.ComputeMinimumDistance(withNaN, cube));
+        Assert.Throws<ArgumentException>(() => OpenGjk.ComputeCollisionInformation(withInfinity, cube, out _));
+    }
+
+    [Fact]
+    public void Should_ThrowArgumentNullException_When_InputIsNull()
+    {
+        Vector3[] cube = UnitCube();
+
+        Assert.Throws<ArgumentNullException>(() => OpenGjk.HasCollision(null!, cube));
+        Assert.Throws<ArgumentNullException>(() => OpenGjk.HasCollision(cube, null!));
+        Assert.Throws<ArgumentNullException>(() => OpenGjk.HasCollision((Vector2[])null!, [new(0, 0)]));
+        Assert.Throws<ArgumentNullException>(() => OpenGjk.ComputeCollisionInformation(null!, cube, out _));
+        Assert.Throws<ArgumentNullException>(() => OpenGjk.ComputeCollisionInformation(cube, null!, out _));
+    }
+
+    [Fact]
+    public void Should_ThrowArgumentException_When_InputIsEmpty()
+    {
+        Vector3[] cube = UnitCube();
+
+        Assert.Throws<ArgumentException>(() => OpenGjk.HasCollision([], cube));
+        Assert.Throws<ArgumentException>(() => OpenGjk.HasCollision(cube, []));
+        Assert.Throws<ArgumentException>(() => OpenGjk.HasCollision([new(0, 0)], Array.Empty<Vector2>()));
+        Assert.Throws<ArgumentException>(() => OpenGjk.ComputeCollisionInformation([], cube, out _));
+    }
+
+    [Theory]
+    [InlineData(0.5f)]
+    [InlineData(1.0f)]
+    [InlineData(1.5f)]
+    [InlineData(1.9f)]
+    public void Should_ReturnPenetrationDepth_When_SphereHullsOverlap(float centerDistance)
+    {
+        // Regression: GJK finishes with a degenerate simplex whose plane passes exactly
+        // through the origin; EPA used to mis-orient that face's normal (inward) and
+        // report ~0 penetration depth regardless of the actual overlap.
+        Vector3[] sphere1 = SphereHull(0, 0, 0, 1);
+        Vector3[] sphere2 = SphereHull(centerDistance, 0, 0, 1);
+
+        double distance = OpenGjk.ComputeCollisionInformation(sphere1, sphere2, out Vector3 normal);
+
+        // The discrete hull is slightly smaller than the ideal sphere, so allow ~5%.
+        double expectedPenetration = 2 - centerDistance;
+        Assert.True(distance < 0, $"expected collision, got distance {distance}");
+        Assert.Equal(expectedPenetration, -distance, expectedPenetration * 0.05);
+        Assert.Equal(1, normal.Length(), 1e-3);
+        Assert.True(normal.X > 0.9f, $"normal should point from body1 toward body2, got {normal}");
+    }
+
+    private static Vector3[] SphereHull(float cx, float cy, float cz, float r, int slices = 24, int stacks = 12)
+    {
+        var points = new List<Vector3>();
+        for (int i = 0; i <= stacks; i++)
+        {
+            double phi = Math.PI * i / stacks;
+            for (int j = 0; j < slices; j++)
+            {
+                double theta = 2 * Math.PI * j / slices;
+                points.Add(new Vector3(
+                    cx + (float)(r * Math.Sin(phi) * Math.Cos(theta)),
+                    cy + (float)(r * Math.Sin(phi) * Math.Sin(theta)),
+                    cz + (float)(r * Math.Cos(phi))));
+            }
+        }
+
+        return [.. points];
+    }
+
+    [Fact]
+    public void Should_ThrowArgumentException_When_NumPointsExceedsCoordLength()
+    {
+        var invalid = new GkPolytope { NumPoints = 10, Coord = [[0, 0, 0]] };
+        var valid = new GkPolytope { NumPoints = 1, Coord = [[5, 0, 0]] };
+
+        Assert.Throws<ArgumentException>(() => OpenGjk.ComputeMinimumDistance(invalid, valid));
+        Assert.Throws<ArgumentException>(() => OpenGjk.ComputeMinimumDistance(valid, invalid));
     }
 
     private static Vector3[] UnitCube() =>

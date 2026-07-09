@@ -1,69 +1,52 @@
+using System.Diagnostics;
 using OpenGJKSharp.Models;
 using System.Numerics;
 
 namespace OpenGJKSharp;
 
-public static class OpenGJKSharp
+/// <summary>
+/// GJK (Gilbert-Johnson-Keerthi) collision detection between convex polytopes,
+/// with EPA (Expanding Polytope Algorithm) support for penetration depth.
+/// </summary>
+public static class OpenGjk
 {
     private const double _gkEpsilon = 2.2204460492503131e-16; // DBL_EPSILON
     private const double _precision = 1e-6;
 
+    /// <summary>
+    /// Determines whether two convex polytopes collide.
+    /// </summary>
+    /// <param name="a">Vertices of the first body.</param>
+    /// <param name="b">Vertices of the second body.</param>
+    /// <param name="precision">Distance below which the bodies are considered colliding. Must not be negative.</param>
+    /// <returns><c>true</c> when the minimum distance is within <paramref name="precision"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="precision"/> is negative.</exception>
     public static bool HasCollision(Vector3[] a, Vector3[] b, double precision = _precision)
     {
-        if (precision < 0)
-        {
-            precision = _precision;
-        }
+        ValidateVertices(a, b);
+        ArgumentOutOfRangeException.ThrowIfNegative(precision);
 
-        double distance = ComputeMinimumDistance(GetGkPolytope(a), GetGkPolytope(b));
+        double distance = ComputeMinimumDistance(ToGkPolytope(a), ToGkPolytope(b));
 
         return distance <= precision;
-
-        static GkPolytope GetGkPolytope(Vector3[] points)
-        {
-            var coordinates = new double[points.Length][];
-
-            for (int i = 0; i < points.Length; i++)
-            {
-                var point = points[i];
-                coordinates[i] = [point.X, point.Y, point.Z];
-            }
-
-            return new GkPolytope()
-            {
-                NumPoints = points.Length,
-                Coord = coordinates,
-            };
-        }
     }
 
+    /// <summary>
+    /// Determines whether two convex 2D polygons collide (treated as flat shapes on the z = 0 plane).
+    /// </summary>
+    /// <param name="a">Vertices of the first polygon.</param>
+    /// <param name="b">Vertices of the second polygon.</param>
+    /// <param name="precision">Distance below which the polygons are considered colliding. Must not be negative.</param>
+    /// <returns><c>true</c> when the minimum distance is within <paramref name="precision"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="precision"/> is negative.</exception>
     public static bool HasCollision(Vector2[] a, Vector2[] b, double precision = _precision)
     {
-        if (precision < 0)
-        {
-            precision = _precision;
-        }
+        ValidateVertices(a, b);
+        ArgumentOutOfRangeException.ThrowIfNegative(precision);
 
-        double distance = ComputeMinimumDistance(GetGkPolytope(a), GetGkPolytope(b));
+        double distance = ComputeMinimumDistance(ToGkPolytope(a), ToGkPolytope(b));
 
         return distance <= precision;
-
-        static GkPolytope GetGkPolytope(Vector2[] points)
-        {
-            var coordinates = new double[points.Length][];
-
-            for (int i = 0; i < points.Length; i++)
-            {
-                var point = points[i];
-                coordinates[i] = [point.X, point.Y, 0];
-            }
-
-            return new GkPolytope()
-            {
-                NumPoints = points.Length,
-                Coord = coordinates,
-            };
-        }
     }
 
     /// <summary>
@@ -73,10 +56,12 @@ public static class OpenGJKSharp
     /// </summary>
     /// <param name="a">Vertices of the first body.</param>
     /// <param name="b">Vertices of the second body.</param>
-    /// <param name="contactNormal">Contact normal computed by the EPA algorithm.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first body toward the second.</param>
     /// <returns>Positive separation distance, or negative penetration depth on collision.</returns>
     public static double ComputeCollisionInformation(Vector3[] a, Vector3[] b, out Vector3 contactNormal)
     {
+        ValidateVertices(a, b);
+
         var bd1 = ToGkPolytope(a);
         var bd2 = ToGkPolytope(b);
         var simplex = new GkSimplex();
@@ -88,6 +73,168 @@ public static class OpenGJKSharp
 
         contactNormal = new Vector3((float)normal[0], (float)normal[1], (float)normal[2]);
         return distance;
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two convex polytopes.
+    /// Returns 0 when the bodies collide.
+    /// </summary>
+    /// <param name="a">Vertices of the first body.</param>
+    /// <param name="b">Vertices of the second body.</param>
+    /// <returns>The minimum distance between the two bodies.</returns>
+    public static double ComputeMinimumDistance(Vector3[] a, Vector3[] b)
+    {
+        return ComputeMinimumDistance(a, b, out _, out _);
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two convex polytopes,
+    /// along with the closest point on each body (witness points).
+    /// Returns 0 when the bodies collide.
+    /// </summary>
+    /// <param name="a">Vertices of the first body.</param>
+    /// <param name="b">Vertices of the second body.</param>
+    /// <param name="closestA">Closest point on the first body.</param>
+    /// <param name="closestB">Closest point on the second body.</param>
+    /// <returns>The minimum distance between the two bodies.</returns>
+    public static double ComputeMinimumDistance(Vector3[] a, Vector3[] b, out Vector3 closestA, out Vector3 closestB)
+    {
+        ValidateVertices(a, b);
+
+        var simplex = new GkSimplex();
+        double distance = ComputeMinimumDistance(ToGkPolytope(a), ToGkPolytope(b), simplex);
+
+        closestA = new Vector3(
+            (float)simplex.Witnesses[0, 0],
+            (float)simplex.Witnesses[0, 1],
+            (float)simplex.Witnesses[0, 2]);
+        closestB = new Vector3(
+            (float)simplex.Witnesses[1, 0],
+            (float)simplex.Witnesses[1, 1],
+            (float)simplex.Witnesses[1, 2]);
+
+        return distance;
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two convex 2D polygons
+    /// (treated as flat shapes on the z = 0 plane).
+    /// Returns 0 when the polygons collide.
+    /// </summary>
+    /// <param name="a">Vertices of the first polygon.</param>
+    /// <param name="b">Vertices of the second polygon.</param>
+    /// <returns>The minimum distance between the two polygons.</returns>
+    public static double ComputeMinimumDistance(Vector2[] a, Vector2[] b)
+    {
+        return ComputeMinimumDistance(a, b, out _, out _);
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two convex 2D polygons
+    /// (treated as flat shapes on the z = 0 plane),
+    /// along with the closest point on each polygon (witness points).
+    /// Returns 0 when the polygons collide.
+    /// </summary>
+    /// <param name="a">Vertices of the first polygon.</param>
+    /// <param name="b">Vertices of the second polygon.</param>
+    /// <param name="closestA">Closest point on the first polygon.</param>
+    /// <param name="closestB">Closest point on the second polygon.</param>
+    /// <returns>The minimum distance between the two polygons.</returns>
+    public static double ComputeMinimumDistance(Vector2[] a, Vector2[] b, out Vector2 closestA, out Vector2 closestB)
+    {
+        ValidateVertices(a, b);
+
+        var simplex = new GkSimplex();
+        double distance = ComputeMinimumDistance(ToGkPolytope(a), ToGkPolytope(b), simplex);
+
+        closestA = new Vector2(
+            (float)simplex.Witnesses[0, 0],
+            (float)simplex.Witnesses[0, 1]);
+        closestB = new Vector2(
+            (float)simplex.Witnesses[1, 0],
+            (float)simplex.Witnesses[1, 1]);
+
+        return distance;
+    }
+
+    private static void ValidateVertices(Vector3[] a, Vector3[] b)
+    {
+        ValidateNotNullOrEmpty(a, b);
+
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (!float.IsFinite(a[i].X) || !float.IsFinite(a[i].Y) || !float.IsFinite(a[i].Z))
+            {
+                throw new ArgumentException($"Vertex at index {i} contains a non-finite coordinate: {a[i]}.", nameof(a));
+            }
+        }
+
+        for (int i = 0; i < b.Length; i++)
+        {
+            if (!float.IsFinite(b[i].X) || !float.IsFinite(b[i].Y) || !float.IsFinite(b[i].Z))
+            {
+                throw new ArgumentException($"Vertex at index {i} contains a non-finite coordinate: {b[i]}.", nameof(b));
+            }
+        }
+    }
+
+    private static void ValidateVertices(Vector2[] a, Vector2[] b)
+    {
+        ValidateNotNullOrEmpty(a, b);
+
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (!float.IsFinite(a[i].X) || !float.IsFinite(a[i].Y))
+            {
+                throw new ArgumentException($"Vertex at index {i} contains a non-finite coordinate: {a[i]}.", nameof(a));
+            }
+        }
+
+        for (int i = 0; i < b.Length; i++)
+        {
+            if (!float.IsFinite(b[i].X) || !float.IsFinite(b[i].Y))
+            {
+                throw new ArgumentException($"Vertex at index {i} contains a non-finite coordinate: {b[i]}.", nameof(b));
+            }
+        }
+    }
+
+    private static void ValidateNotNullOrEmpty<T>(T[] a, T[] b)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(b);
+
+        if (a.Length == 0)
+        {
+            throw new ArgumentException("At least one vertex is required.", nameof(a));
+        }
+
+        if (b.Length == 0)
+        {
+            throw new ArgumentException("At least one vertex is required.", nameof(b));
+        }
+    }
+
+    private static void ValidatePolytope(GkPolytope polytope, string paramName)
+    {
+        ArgumentNullException.ThrowIfNull(polytope, paramName);
+
+        if (polytope.NumPoints < 1 || polytope.NumPoints > polytope.Coord.Length)
+        {
+            throw new ArgumentException(
+                $"NumPoints ({polytope.NumPoints}) must be between 1 and Coord.Length ({polytope.Coord.Length}).",
+                paramName);
+        }
+
+        for (int i = 0; i < polytope.NumPoints; i++)
+        {
+            if (polytope.Coord[i] is not { Length: >= 3 })
+            {
+                throw new ArgumentException(
+                    $"Coord[{i}] must contain at least 3 elements (x, y, z).",
+                    paramName);
+            }
+        }
     }
 
     private static GkPolytope ToGkPolytope(Vector3[] points)
@@ -107,16 +254,35 @@ public static class OpenGJKSharp
         };
     }
 
+    private static GkPolytope ToGkPolytope(Vector2[] points)
+    {
+        var coordinates = new double[points.Length][];
+
+        for (int i = 0; i < points.Length; i++)
+        {
+            var point = points[i];
+            coordinates[i] = [point.X, point.Y, 0];
+        }
+
+        return new GkPolytope()
+        {
+            NumPoints = points.Length,
+            Coord = coordinates,
+        };
+    }
+
     #region OpenGJK ported from https://github.com/MattiaMontanari/openGJK
 
     /// <summary>
-    /// Invoke this function from C# applications
+    /// Computes the minimum distance between two bodies given as [3, n] coordinate arrays.
+    /// Kept for compatibility with the original openGJK C interface.
     /// </summary>
-    /// <param name="nCoordsA"></param>
-    /// <param name="inCoordsA"></param>
-    /// <param name="nCoordsB"></param>
-    /// <param name="inCoordsB"></param>
-    /// <returns></returns>
+    /// <param name="nCoordsA">Number of points of the first body.</param>
+    /// <param name="inCoordsA">Coordinates of the first body as a [3, n] array (x/y/z rows).</param>
+    /// <param name="nCoordsB">Number of points of the second body.</param>
+    /// <param name="inCoordsB">Coordinates of the second body as a [3, n] array (x/y/z rows).</param>
+    /// <returns>The minimum distance between the two bodies.</returns>
+    [Obsolete("Use ComputeMinimumDistance(Vector3[], Vector3[]) or ComputeMinimumDistance(GkPolytope, GkPolytope) instead.")]
     public static double CsFunction(int nCoordsA, double[,] inCoordsA, int nCoordsB, double[,] inCoordsB)
     {
         double[][] pinCoordsA = new double[nCoordsA][];
@@ -142,19 +308,38 @@ public static class OpenGJKSharp
             NumPoints = nCoordsB
         };
 
-        // Compute squared distance using GJK algorithm
+        // Compute minimum distance using GJK algorithm
         double distance = ComputeMinimumDistance(bd1, bd2);
 
         return distance;
     }
 
+    /// <summary>
+    /// Computes the minimum distance between two convex polytopes using the GJK algorithm.
+    /// </summary>
+    /// <param name="bd1">The first body.</param>
+    /// <param name="bd2">The second body.</param>
+    /// <returns>The minimum distance between the two bodies (0 when colliding).</returns>
     public static double ComputeMinimumDistance(GkPolytope bd1, GkPolytope bd2)
     {
         return ComputeMinimumDistance(bd1, bd2, new GkSimplex());
     }
 
+    /// <summary>
+    /// Computes the minimum distance between two convex polytopes using the GJK algorithm.
+    /// After the call, <paramref name="s"/> holds the final simplex and the witness points
+    /// (closest point on each body) in <see cref="GkSimplex.Witnesses"/>.
+    /// </summary>
+    /// <param name="bd1">The first body.</param>
+    /// <param name="bd2">The second body.</param>
+    /// <param name="s">Simplex updated during the GJK iterations.</param>
+    /// <returns>The minimum distance between the two bodies (0 when colliding).</returns>
     public static double ComputeMinimumDistance(GkPolytope bd1, GkPolytope bd2, GkSimplex s)
     {
+        ValidatePolytope(bd1, nameof(bd1));
+        ValidatePolytope(bd2, nameof(bd2));
+        ArgumentNullException.ThrowIfNull(s);
+
         uint k = 0; // Iteration counter
         const int mk = 25; // Maximum number of GJK iterations
         const double eps_rel = _gkEpsilon * 1e4; // Tolerance on relative
@@ -257,7 +442,7 @@ public static class OpenGJKSharp
 
         if (k == mk)
         {
-            Console.WriteLine("\n * * * * * * * * * * * * MAXIMUM ITERATION NUMBER REACHED!!!  * * * * * * * * * * * * * * \n");
+            Debug.WriteLine("\n * * * * * * * * * * * * MAXIMUM ITERATION NUMBER REACHED!!!  * * * * * * * * * * * * * * \n");
         }
 
         ComputeWitnesses(bd1, bd2, s);
@@ -316,7 +501,7 @@ public static class OpenGJKSharp
                 S1D(s, v);
                 break;
             default:
-                Console.WriteLine("\nERROR:\t invalid simplex\n");
+                Debug.WriteLine("\nERROR:\t invalid simplex\n");
                 break;
         }
     }
@@ -784,7 +969,7 @@ public static class OpenGJKSharp
 
                     if (!hff2Ki && !hff2Kj)
                     {
-                        Console.WriteLine("\n\n UNEXPECTED VALUES!!! \n\n");
+                        Debug.WriteLine("\n\n UNEXPECTED VALUES!!! \n\n");
                     }
                     if (hff2Ki && hff2Kj)
                     {
@@ -918,7 +1103,7 @@ public static class OpenGJKSharp
                 break;
 
             default:
-                Console.WriteLine("\nERROR:\tunhandled");
+                Debug.WriteLine("\nERROR:\tunhandled");
                 break;
         }
     }
@@ -1034,7 +1219,7 @@ public static class OpenGJKSharp
                 W0D(bd1, bd2, smp);
                 break;
             default:
-                Console.WriteLine("\nERROR:\t invalid simplex\n");
+                Debug.WriteLine("\nERROR:\t invalid simplex\n");
                 break;
         }
     }
@@ -1072,6 +1257,7 @@ public static class OpenGJKSharp
         {
             // Degenerate case
             W0D(bd1, bd2, smp);
+            return;
         }
 
         double a1 = DotProduct(pq, po) / det;
@@ -1114,6 +1300,7 @@ public static class OpenGJKSharp
         {
             // Degenerate case
             W1D(bd1, bd2, smp);
+            return;
         }
 
         double b0 = DotProduct(pq, po);
@@ -1136,6 +1323,7 @@ public static class OpenGJKSharp
             smp.VrtxIdx[0, 0] = smp.VrtxIdx[2, 0];
             smp.VrtxIdx[0, 1] = smp.VrtxIdx[2, 1];
             W1D(bd1, bd2, smp);
+            return;
         }
         else if (a1 < _gkEpsilon)
         {
@@ -1146,11 +1334,13 @@ public static class OpenGJKSharp
             smp.VrtxIdx[1, 0] = smp.VrtxIdx[2, 0];
             smp.VrtxIdx[1, 1] = smp.VrtxIdx[2, 1];
             W1D(bd1, bd2, smp);
+            return;
         }
         else if (a2 < _gkEpsilon)
         {
             smp.NVrtx = 2;
             W1D(bd1, bd2, smp);
+            return;
         }
 
         // Compute witness points
@@ -1203,6 +1393,7 @@ public static class OpenGJKSharp
         {
             // Degenerate case
             W2D(bd1, bd2, smp);
+            return;
         }
 
         double b0 = DotProduct(pq, po);
@@ -1237,6 +1428,7 @@ public static class OpenGJKSharp
             smp.VrtxIdx[0, 0] = smp.VrtxIdx[3, 0];
             smp.VrtxIdx[0, 1] = smp.VrtxIdx[3, 1];
             W2D(bd1, bd2, smp);
+            return;
         }
         else if (a1 < _gkEpsilon)
         {
@@ -1247,6 +1439,7 @@ public static class OpenGJKSharp
             smp.VrtxIdx[1, 0] = smp.VrtxIdx[3, 0];
             smp.VrtxIdx[1, 1] = smp.VrtxIdx[3, 1];
             W2D(bd1, bd2, smp);
+            return;
         }
         else if (a2 < _gkEpsilon)
         {
@@ -1257,11 +1450,13 @@ public static class OpenGJKSharp
             smp.VrtxIdx[2, 0] = smp.VrtxIdx[3, 0];
             smp.VrtxIdx[2, 1] = smp.VrtxIdx[3, 1];
             W2D(bd1, bd2, smp);
+            return;
         }
         else if (a3 < _gkEpsilon)
         {
             smp.NVrtx = 3;
             W2D(bd1, bd2, smp);
+            return;
         }
 
         // Compute witness points
@@ -1289,7 +1484,7 @@ public static class OpenGJKSharp
     // Compute face normal and distance of face from origin.
     // Winding is already fixed at face creation time, so the cross product
     // direction is trusted directly - no centroid-based orientation check needed.
-    private static void ComputeFaceNormalDistance(EpaPolytope poly, int faceIdx)
+    private static void ComputeFaceNormalDistance(EpaPolytope poly, int faceIdx, double[] centroid)
     {
         EpaFace face = poly.Faces[faceIdx];
 
@@ -1318,15 +1513,36 @@ public static class OpenGJKSharp
 
             face.Distance = DotProduct(face.Normal, v0);
 
-            // Safety: origin should be inside polytope so distance must be positive.
-            // If negative, the winding was wrong - flip to recover.
-            if (face.Distance < 0)
+            // Orient the normal away from the polytope interior. Deciding by the sign
+            // of Distance alone mis-orients faces whose plane passes through the origin
+            // (Distance ~ +-epsilon): a tiny negative value flipped the normal inward,
+            // the support point in that direction duplicated an existing vertex, and
+            // EPA stalled reporting zero penetration depth.
+            double[] toCentroid =
+            [
+                centroid[0] - v0[0],
+                centroid[1] - v0[1],
+                centroid[2] - v0[2],
+            ];
+            double side = DotProduct(face.Normal, toCentroid);
+            bool flip = Math.Abs(side) > _gkEpsilon
+                ? side > 0
+                : face.Distance < 0;
+            if (flip)
             {
                 for (int i = 0; i < 3; i++)
                 {
                     face.Normal[i] = -face.Normal[i];
                 }
                 face.Distance = -face.Distance;
+            }
+
+            // The origin sits inside the polytope, so an outward-oriented face can only
+            // report a negative distance through numerical noise - clamp it so the face
+            // stays eligible in the closest-face search.
+            if (face.Distance < 0 && face.Distance > -_precision)
+            {
+                face.Distance = 0;
             }
         }
         else
@@ -1601,6 +1817,15 @@ public static class OpenGJKSharp
     // Entry point to the EPA Implementation
     //*******************************************************************************************
 
+    /// <summary>
+    /// Runs the EPA algorithm on the final GJK simplex to compute the penetration depth
+    /// and contact normal when the bodies collide.
+    /// </summary>
+    /// <param name="bd1">The first body.</param>
+    /// <param name="bd2">The second body.</param>
+    /// <param name="simplex">The simplex produced by <see cref="ComputeMinimumDistance(GkPolytope, GkPolytope, GkSimplex)"/>.</param>
+    /// <param name="distance">On input the GJK distance; on output negative penetration depth when colliding.</param>
+    /// <param name="contactNormal">Receives the contact normal (length 3).</param>
     public static void ComputeCollisionInformation(GkPolytope bd1, GkPolytope bd2,
         GkSimplex simplex, ref double distance, double[] contactNormal)
     {
@@ -1625,6 +1850,13 @@ public static class OpenGJKSharp
                 int[] newVertexIdx = new int[2];
 
                 double[] dir = [simplex.Vrtx[0, 0], simplex.Vrtx[0, 1], simplex.Vrtx[0, 2]];
+                if (Norm2(dir) < epsSq)
+                {
+                    // Zero initial direction (e.g. both bodies share their first vertex):
+                    // fall back to an arbitrary axis so the simplex can still grow.
+                    dir = [1.0, 0.0, 0.0];
+                }
+
                 SupportEpa(bd1, bd2, dir, newVertex, newVertexIdx);
 
                 // Check if this is a new point relative to the existing simplex vertex.
@@ -1864,7 +2096,7 @@ public static class OpenGJKSharp
             {
                 if (poly.Faces[i].Valid)
                 {
-                    ComputeFaceNormalDistance(poly, i);
+                    ComputeFaceNormalDistance(poly, i, centroid);
                 }
             }
 
@@ -2124,7 +2356,7 @@ public static class OpenGJKSharp
                 {
                     continue;
                 }
-                ComputeFaceNormalDistance(poly, i);
+                ComputeFaceNormalDistance(poly, i, centroid);
             }
 
             int closestFace = -1;
