@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read
+      contents: write # 릴리스 태그 push용
       id-token: write # Trusted Publishing용 GitHub OIDC 토큰 발급 허용
 
     steps:
@@ -49,3 +49,20 @@ jobs:
       - name: Publish to NuGet
         if: github.ref == 'refs/heads/main'  # main 브랜치에서만 배포
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      # 배포된 버전에 릴리스 태그(v<버전>)를 자동으로 push (이미 있으면 스킵)
+      - name: Tag release
+        if: github.ref == 'refs/heads/main'
+        run: |
+          VERSION=$(grep -oPm1 '(?<=<Version>)[^<]+' src/OpenGJKSharp/OpenGJKSharp.csproj)
+          if [ -z "$VERSION" ]; then
+            echo "Version not found in csproj"; exit 1
+          fi
+          if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
+            echo "Tag v$VERSION already exists, skipping"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "v$VERSION" -m "Release v$VERSION"
+            git push origin "v$VERSION"
+          fi
