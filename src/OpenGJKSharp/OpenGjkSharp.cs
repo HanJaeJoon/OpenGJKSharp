@@ -66,6 +66,47 @@ public static class OpenGJKSharp
         }
     }
 
+    /// <summary>
+    /// Computes collision information between two convex polytopes.
+    /// Returns the minimum distance when the bodies are separated (positive value),
+    /// or the penetration depth computed by the EPA algorithm when they collide (negative value).
+    /// </summary>
+    /// <param name="a">Vertices of the first body.</param>
+    /// <param name="b">Vertices of the second body.</param>
+    /// <param name="contactNormal">Contact normal computed by the EPA algorithm.</param>
+    /// <returns>Positive separation distance, or negative penetration depth on collision.</returns>
+    public static double ComputeCollisionInformation(Vector3[] a, Vector3[] b, out Vector3 contactNormal)
+    {
+        var bd1 = ToGkPolytope(a);
+        var bd2 = ToGkPolytope(b);
+        var simplex = new GkSimplex();
+
+        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+
+        double[] normal = new double[3];
+        ComputeCollisionInformation(bd1, bd2, simplex, ref distance, normal);
+
+        contactNormal = new Vector3((float)normal[0], (float)normal[1], (float)normal[2]);
+        return distance;
+    }
+
+    private static GkPolytope ToGkPolytope(Vector3[] points)
+    {
+        var coordinates = new double[points.Length][];
+
+        for (int i = 0; i < points.Length; i++)
+        {
+            var point = points[i];
+            coordinates[i] = [point.X, point.Y, point.Z];
+        }
+
+        return new GkPolytope()
+        {
+            NumPoints = points.Length,
+            Coord = coordinates,
+        };
+    }
+
     #region OpenGJK ported from https://github.com/MattiaMontanari/openGJK
 
     /// <summary>
@@ -109,6 +150,11 @@ public static class OpenGJKSharp
 
     public static double ComputeMinimumDistance(GkPolytope bd1, GkPolytope bd2)
     {
+        return ComputeMinimumDistance(bd1, bd2, new GkSimplex());
+    }
+
+    public static double ComputeMinimumDistance(GkPolytope bd1, GkPolytope bd2, GkSimplex s)
+    {
         uint k = 0; // Iteration counter
         const int mk = 25; // Maximum number of GJK iterations
         const double eps_rel = _gkEpsilon * 1e4; // Tolerance on relative
@@ -126,10 +172,7 @@ public static class OpenGJKSharp
         v[2] = bd1.Coord[0][2] - bd2.Coord[0][2];
 
         // Initialize simplex
-        var s = new GkSimplex
-        {
-            NVrtx = 1
-        };
+        s.NVrtx = 1;
         for (int t = 0; t < 3; ++t)
         {
             s.Vrtx[0, t] = v[t];
@@ -930,20 +973,8 @@ public static class OpenGJKSharp
     private static bool Hff3(double[] p, double[] q, double[] r)
     {
         double[] n = new double[3];
-        double[] pq = new double[3];
-        double[] pr = new double[3];
-
-        for (int i = 0; i < 3; i++)
-        {
-            pq[i] = q[i] - p[i];
-        }
-        for (int i = 0; i < 3; i++)
-        {
-            pr[i] = r[i] - p[i];
-        }
-
-        CrossProduct(pq, pr, n);
-        return DotProduct(p, n) <= 0;
+        CrossProduct(q, r, n);
+        return DotProduct(p, n) <= 0; // discard s if true
     }
 
     private static void S3DRegion1234(GkSimplex s, double[] v)
@@ -1248,6 +1279,887 @@ public static class OpenGJKSharp
         {
             smp.Witnesses[0, t] = w00[t] * a0 + w10[t] * a1 + w20[t] * a2 + w30[t] * a3;
             smp.Witnesses[1, t] = w01[t] * a0 + w11[t] * a1 + w21[t] * a2 + w31[t] * a3;
+        }
+    }
+
+    //*******************************************************************************************
+    // EPA Algorithm
+    //*******************************************************************************************
+
+    // Compute face normal and distance of face from origin.
+    // Winding is already fixed at face creation time, so the cross product
+    // direction is trusted directly - no centroid-based orientation check needed.
+    private static void ComputeFaceNormalDistance(EpaPolytope poly, int faceIdx)
+    {
+        EpaFace face = poly.Faces[faceIdx];
+
+        double[] v0 = poly.Vertices[face.V[0]];
+        double[] v1 = poly.Vertices[face.V[1]];
+        double[] v2 = poly.Vertices[face.V[2]];
+
+        double[] e0 = new double[3];
+        double[] e1 = new double[3];
+        for (int i = 0; i < 3; i++)
+        {
+            e0[i] = v1[i] - v0[i];
+            e1[i] = v2[i] - v0[i];
+        }
+
+        CrossProduct(e0, e1, face.Normal);
+        double normSq = Norm2(face.Normal);
+
+        if (normSq > _gkEpsilon * _gkEpsilon)
+        {
+            double norm = Math.Sqrt(normSq);
+            for (int i = 0; i < 3; i++)
+            {
+                face.Normal[i] /= norm;
+            }
+
+            face.Distance = DotProduct(face.Normal, v0);
+
+            // Safety: origin should be inside polytope so distance must be positive.
+            // If negative, the winding was wrong - flip to recover.
+            if (face.Distance < 0)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    face.Normal[i] = -face.Normal[i];
+                }
+                face.Distance = -face.Distance;
+            }
+        }
+        else
+        {
+            face.Valid = false;
+            face.Distance = 1e10;
+        }
+    }
+
+    // Check if a face is visible from a point (point is on positive side of face).
+    // Needed to determine which faces to restructure when vertex is added.
+    private static bool IsFaceVisible(EpaPolytope poly, int faceIdx, double[] point)
+    {
+        EpaFace face = poly.Faces[faceIdx];
+        if (!face.Valid)
+        {
+            return false;
+        }
+
+        double[] v0 = poly.Vertices[face.V[0]];
+        double[] diff = new double[3];
+        for (int i = 0; i < 3; i++)
+        {
+            diff[i] = point[i] - v0[i];
+        }
+
+        return DotProduct(face.Normal, diff) > _gkEpsilon;
+    }
+
+    // Initialize EPA polytope from GJK simplex (should be a tetrahedron)
+    private static void InitEpaPolytope(EpaPolytope poly, GkSimplex simplex, double[] centroid)
+    {
+        // Copy vertices from simplex
+        poly.NumVertices = 4;
+        for (int i = 0; i < 4; i++)
+        {
+            for (int j = 0; j < 3; j++)
+            {
+                poly.Vertices[i][j] = simplex.Vrtx[i, j];
+            }
+            poly.VertexIndices[i][0] = simplex.VrtxIdx[i, 0];
+            poly.VertexIndices[i][1] = simplex.VrtxIdx[i, 1];
+        }
+
+        // Compute centroid of the tetrahedron
+        centroid[0] = centroid[1] = centroid[2] = 0;
+
+        for (int i = 0; i < 4; i++)
+        {
+            for (int j = 0; j < 3; j++)
+            {
+                centroid[j] += poly.Vertices[i][j] * 0.25;
+            }
+        }
+
+        // Create 4 faces of tetrahedron
+        // set up the faces and then fix winding based on normal direction
+        // Face 0: vertices 0, 1, 2
+        poly.Faces[0].V[0] = 0;
+        poly.Faces[0].V[1] = 1;
+        poly.Faces[0].V[2] = 2;
+        poly.Faces[0].Valid = true;
+
+        // Face 1: vertices 0, 3, 1
+        poly.Faces[1].V[0] = 0;
+        poly.Faces[1].V[1] = 3;
+        poly.Faces[1].V[2] = 1;
+        poly.Faces[1].Valid = true;
+
+        // Face 2: vertices 0, 2, 3
+        poly.Faces[2].V[0] = 0;
+        poly.Faces[2].V[1] = 2;
+        poly.Faces[2].V[2] = 3;
+        poly.Faces[2].Valid = true;
+
+        // Face 3: vertices 1, 3, 2
+        poly.Faces[3].V[0] = 1;
+        poly.Faces[3].V[1] = 3;
+        poly.Faces[3].V[2] = 2;
+        poly.Faces[3].Valid = true;
+
+        // Copy vertex indices for witness point computation
+        for (int f = 0; f < 4; f++)
+        {
+            for (int v = 0; v < 3; v++)
+            {
+                int vi = poly.Faces[f].V[v];
+                poly.Faces[f].VIdx[v][0] = simplex.VrtxIdx[vi, 0];
+                poly.Faces[f].VIdx[v][1] = simplex.VrtxIdx[vi, 1];
+            }
+        }
+
+        // Compute normals and fix winding
+        for (int f = 0; f < 4; f++)
+        {
+            double[] v0 = poly.Vertices[poly.Faces[f].V[0]];
+            double[] v1 = poly.Vertices[poly.Faces[f].V[1]];
+            double[] v2 = poly.Vertices[poly.Faces[f].V[2]];
+
+            double[] e0 = new double[3];
+            double[] e1 = new double[3];
+            double[] normal = new double[3];
+
+            for (int i = 0; i < 3; i++)
+            {
+                e0[i] = v1[i] - v0[i];
+                e1[i] = v2[i] - v0[i];
+            }
+            CrossProduct(e0, e1, normal);
+
+            // If normal points toward centroid need to flip the winding
+            double[] toCentroid = new double[3];
+            for (int i = 0; i < 3; i++)
+            {
+                toCentroid[i] = centroid[i] - v0[i];
+            }
+            if (DotProduct(normal, toCentroid) > 0)
+            {
+                (poly.Faces[f].V[1], poly.Faces[f].V[2]) = (poly.Faces[f].V[2], poly.Faces[f].V[1]);
+                (poly.Faces[f].VIdx[1], poly.Faces[f].VIdx[2]) = (poly.Faces[f].VIdx[2], poly.Faces[f].VIdx[1]);
+            }
+        }
+
+        poly.MaxFaceIndex = 4;
+    }
+
+    // barycentric coordinate compute closest point on triangle to origin
+    private static void ComputeBarycentricOrigin(double[] v0, double[] v1, double[] v2,
+        out double a0, out double a1, out double a2)
+    {
+        // Compute vectors
+        double[] e0 = new double[3];
+        double[] e1 = new double[3];
+
+        for (int i = 0; i < 3; i++)
+        {
+            e0[i] = v1[i] - v0[i];
+            e1[i] = v2[i] - v0[i];
+        }
+
+        // Compute dot products for barycentric coords
+        double d00 = DotProduct(e0, e0);
+        double d01 = DotProduct(e0, e1);
+        double d11 = DotProduct(e1, e1);
+        double d20 = -DotProduct(v0, e0);
+        double d21 = -DotProduct(v0, e1);
+
+        double denom = d00 * d11 - d01 * d01;
+
+        if (Math.Abs(denom) < _gkEpsilon)
+        {
+            // Degenerate
+            a0 = a1 = a2 = 1.0 / 3.0;
+            return;
+        }
+
+        double invDenom = 1.0 / denom;
+        double u = (d11 * d20 - d01 * d21) * invDenom;
+        double v = (d00 * d21 - d01 * d20) * invDenom;
+        double w = 1.0 - u - v;
+
+        // Clamp to triangle
+        if (w < 0)
+        {
+            // Origin projects outside edge v1-v2
+            // Project onto edge v1-v2
+            double[] e12 = new double[3];
+            for (int i = 0; i < 3; i++)
+            {
+                e12[i] = v2[i] - v1[i];
+            }
+            double t = -DotProduct(v1, e12) / DotProduct(e12, e12);
+            t = Math.Max(0.0, Math.Min(1.0, t));
+            a0 = 0;
+            a1 = 1.0 - t;
+            a2 = t;
+        }
+        else if (u < 0)
+        {
+            // Origin projects outside edge v0-v2
+            double t = -DotProduct(v0, e1) / DotProduct(e1, e1);
+            t = Math.Max(0.0, Math.Min(1.0, t));
+            a0 = 1.0 - t;
+            a1 = 0;
+            a2 = t;
+        }
+        else if (v < 0)
+        {
+            // Origin projects outside edge v0-v1
+            double t = -DotProduct(v0, e0) / DotProduct(e0, e0);
+            t = Math.Max(0.0, Math.Min(1.0, t));
+            a0 = 1.0 - t;
+            a1 = t;
+            a2 = 0;
+        }
+        else
+        {
+            // Inside triangle
+            a0 = w;
+            a1 = u;
+            a2 = v;
+        }
+    }
+
+    // Support function for EPA, basically the GJK one but only cares about the Minkowski difference point
+    private static void SupportEpa(GkPolytope body1, GkPolytope body2,
+        double[] direction, double[] result, int[] resultIdx)
+    {
+        double localMax1 = -1e10;
+        double localMax2 = -1e10;
+        int localBest1 = -1;
+        int localBest2 = -1;
+
+        // Search body1
+        for (int i = 0; i < body1.NumPoints; i++)
+        {
+            double s = DotProduct(body1.Coord[i], direction);
+            if (s > localMax1)
+            {
+                localMax1 = s;
+                localBest1 = i;
+            }
+        }
+
+        // Search body2 in opposite direction
+        for (int i = 0; i < body2.NumPoints; i++)
+        {
+            double s = DotProduct(body2.Coord[i], direction);
+            if (-s > localMax2)
+            {
+                localMax2 = -s;
+                localBest2 = i;
+            }
+        }
+
+        // Compute Minkowski difference point
+        if (localBest1 >= 0 && localBest2 >= 0)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                result[i] = body1.Coord[localBest1][i] - body2.Coord[localBest2][i];
+            }
+            resultIdx[0] = localBest1;
+            resultIdx[1] = localBest2;
+        }
+    }
+
+    private static void SetContactNormal(GkSimplex smp, double[] contactNormal)
+    {
+        double[] d =
+        [
+            smp.Witnesses[1, 0] - smp.Witnesses[0, 0],
+            smp.Witnesses[1, 1] - smp.Witnesses[0, 1],
+            smp.Witnesses[1, 2] - smp.Witnesses[0, 2],
+        ];
+        double n = Math.Sqrt(Norm2(d));
+        if (n > _gkEpsilon)
+        {
+            contactNormal[0] = d[0] / n;
+            contactNormal[1] = d[1] / n;
+            contactNormal[2] = d[2] / n;
+        }
+        else
+        {
+            contactNormal[0] = 1.0;
+            contactNormal[1] = 0.0;
+            contactNormal[2] = 0.0;
+        }
+    }
+
+    //*******************************************************************************************
+    // Entry point to the EPA Implementation
+    //*******************************************************************************************
+
+    public static void ComputeCollisionInformation(GkPolytope bd1, GkPolytope bd2,
+        GkSimplex simplex, ref double distance, double[] contactNormal)
+    {
+        const double epsSq = _gkEpsilon * _gkEpsilon;
+
+        // if distance isn't 0 didn't detect collision - skip EPA
+        if (distance > _gkEpsilon)
+        {
+            SetContactNormal(simplex, contactNormal);
+            return;
+        }
+
+        // If GJK returned a degenerate simplex, rebuild it properly for EPA
+        if (simplex.NVrtx != 4)
+        {
+            if (simplex.NVrtx == 1)
+            {
+                // Grow simplex from a single point: fire a support in some direction.
+                // We use current simplex point for new direction for the
+                // support; if this does not produce a new point, treat penetration as 0.
+                double[] newVertex = new double[3];
+                int[] newVertexIdx = new int[2];
+
+                double[] dir = [simplex.Vrtx[0, 0], simplex.Vrtx[0, 1], simplex.Vrtx[0, 2]];
+                SupportEpa(bd1, bd2, dir, newVertex, newVertexIdx);
+
+                // Check if this is a new point relative to the existing simplex vertex.
+                double dx = newVertex[0] - simplex.Vrtx[0, 0];
+                double dy = newVertex[1] - simplex.Vrtx[0, 1];
+                double dz = newVertex[2] - simplex.Vrtx[0, 2];
+                bool isNew = dx * dx + dy * dy + dz * dz >= epsSq;
+
+                if (isNew)
+                {
+                    int idx = simplex.NVrtx;
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        simplex.Vrtx[idx, c] = newVertex[c];
+                    }
+                    simplex.VrtxIdx[idx, 0] = newVertexIdx[0];
+                    simplex.VrtxIdx[idx, 1] = newVertexIdx[1];
+                    simplex.NVrtx = 2;
+                }
+                else
+                {
+                    // No new support point means penetration depth effectively zero.
+                    distance = 0;
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        simplex.Witnesses[0, c] = bd1.Coord[newVertexIdx[0]][c];
+                        simplex.Witnesses[1, c] = bd2.Coord[newVertexIdx[1]][c];
+                    }
+                    SetContactNormal(simplex, contactNormal);
+                    return;
+                }
+            }
+            if (simplex.NVrtx == 2)
+            {
+                // Grow simplex from an edge: fire a support in a direction perpendicular
+                // to the edge. If this does not produce a new point, treat penetration as 0.
+                double[] dir = new double[3];
+                double[] newVertex = new double[3];
+                int[] newVertexIdx = new int[2];
+
+                double[] edge = new double[3];
+                for (int c = 0; c < 3; ++c)
+                {
+                    edge[c] = simplex.Vrtx[1, c] - simplex.Vrtx[0, c];
+                }
+
+                // Build a perpendicular
+                double[] axis = [1.0, 0.0, 0.0];
+                double edgeNorm = Math.Sqrt(Norm2(edge));
+                if (edgeNorm > _gkEpsilon && Math.Abs(edge[0]) > 0.9 * edgeNorm)
+                {
+                    axis[0] = 0.0;
+                    axis[1] = 1.0;
+                    axis[2] = 0.0;
+                }
+
+                // dir = edge x axis
+                CrossProduct(edge, axis, dir);
+                if (Norm2(dir) < _gkEpsilon)
+                {
+                    // Fallback axis
+                    axis[0] = 0.0;
+                    axis[1] = 0.0;
+                    axis[2] = 1.0;
+                    CrossProduct(edge, axis, dir);
+                }
+
+                SupportEpa(bd1, bd2, dir, newVertex, newVertexIdx);
+
+                // Check if this is a new point relative to both existing simplex vertices.
+                bool isNew = true;
+                for (int vtx = 0; vtx < simplex.NVrtx; ++vtx)
+                {
+                    double dx = newVertex[0] - simplex.Vrtx[vtx, 0];
+                    double dy = newVertex[1] - simplex.Vrtx[vtx, 1];
+                    double dz = newVertex[2] - simplex.Vrtx[vtx, 2];
+                    if (dx * dx + dy * dy + dz * dz < epsSq)
+                    {
+                        isNew = false;
+                        break;
+                    }
+                }
+
+                if (isNew)
+                {
+                    int idx = simplex.NVrtx;
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        simplex.Vrtx[idx, c] = newVertex[c];
+                    }
+                    simplex.VrtxIdx[idx, 0] = newVertexIdx[0];
+                    simplex.VrtxIdx[idx, 1] = newVertexIdx[1];
+                    simplex.NVrtx = 3;
+                }
+                else
+                {
+                    // No new support point means penetration depth effectively zero.
+                    distance = 0;
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        simplex.Witnesses[0, c] = bd1.Coord[newVertexIdx[0]][c];
+                        simplex.Witnesses[1, c] = bd2.Coord[newVertexIdx[1]][c];
+                    }
+                    SetContactNormal(simplex, contactNormal);
+                    return;
+                }
+            }
+            if (simplex.NVrtx == 3)
+            {
+                // Grow simplex from a triangle: fire a support in the direction of the
+                // triangle normal. If this does not produce a new point, treat penetration as 0.
+                double[] dir = new double[3];
+                double[] newVertex = new double[3];
+                int[] newVertexIdx = new int[2];
+
+                double[] e0 = new double[3];
+                double[] e1 = new double[3];
+                for (int c = 0; c < 3; ++c)
+                {
+                    e0[c] = simplex.Vrtx[1, c] - simplex.Vrtx[0, c];
+                    e1[c] = simplex.Vrtx[2, c] - simplex.Vrtx[0, c];
+                }
+                // dir = e0 x e1 (normal to the triangle)
+                CrossProduct(e0, e1, dir);
+
+                SupportEpa(bd1, bd2, dir, newVertex, newVertexIdx);
+
+                // Check if this is a new point relative to all three existing simplex vertices.
+                bool isNew = true;
+                for (int vtx = 0; vtx < simplex.NVrtx; ++vtx)
+                {
+                    double dx = newVertex[0] - simplex.Vrtx[vtx, 0];
+                    double dy = newVertex[1] - simplex.Vrtx[vtx, 1];
+                    double dz = newVertex[2] - simplex.Vrtx[vtx, 2];
+                    if (dx * dx + dy * dy + dz * dz < epsSq)
+                    {
+                        isNew = false;
+                        break;
+                    }
+                }
+
+                if (isNew)
+                {
+                    int idx = simplex.NVrtx;
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        simplex.Vrtx[idx, c] = newVertex[c];
+                    }
+                    simplex.VrtxIdx[idx, 0] = newVertexIdx[0];
+                    simplex.VrtxIdx[idx, 1] = newVertexIdx[1];
+                    simplex.NVrtx = 4;
+                }
+                else
+                {
+                    // Try opposite direction
+                    dir[0] = -dir[0];
+                    dir[1] = -dir[1];
+                    dir[2] = -dir[2];
+                }
+
+                // If first direction didn't work, try opposite
+                if (simplex.NVrtx == 3)
+                {
+                    SupportEpa(bd1, bd2, dir, newVertex, newVertexIdx);
+                    isNew = true;
+                    for (int vtx = 0; vtx < simplex.NVrtx; ++vtx)
+                    {
+                        double dx = newVertex[0] - simplex.Vrtx[vtx, 0];
+                        double dy = newVertex[1] - simplex.Vrtx[vtx, 1];
+                        double dz = newVertex[2] - simplex.Vrtx[vtx, 2];
+                        if (dx * dx + dy * dy + dz * dz < epsSq)
+                        {
+                            isNew = false;
+                            break;
+                        }
+                    }
+
+                    if (isNew)
+                    {
+                        int idx = simplex.NVrtx;
+                        for (int c = 0; c < 3; ++c)
+                        {
+                            simplex.Vrtx[idx, c] = newVertex[c];
+                        }
+                        simplex.VrtxIdx[idx, 0] = newVertexIdx[0];
+                        simplex.VrtxIdx[idx, 1] = newVertexIdx[1];
+                        simplex.NVrtx = 4;
+                    }
+                    else
+                    {
+                        distance = 0;
+                        for (int c = 0; c < 3; ++c)
+                        {
+                            simplex.Witnesses[0, c] = bd1.Coord[newVertexIdx[0]][c];
+                            simplex.Witnesses[1, c] = bd2.Coord[newVertexIdx[1]][c];
+                        }
+                        SetContactNormal(simplex, contactNormal);
+                        return;
+                    }
+                }
+            }
+
+            // If we still don't have 4 vertices, abort
+            if (simplex.NVrtx != 4)
+            {
+                distance = 0;
+                // Set witness points from best available simplex vertex
+                int best = simplex.NVrtx > 0 ? simplex.NVrtx - 1 : 0;
+                for (int c = 0; c < 3; ++c)
+                {
+                    simplex.Witnesses[0, c] = bd1.Coord[simplex.VrtxIdx[best, 0]][c];
+                    simplex.Witnesses[1, c] = bd2.Coord[simplex.VrtxIdx[best, 1]][c];
+                }
+                SetContactNormal(simplex, contactNormal);
+                return;
+            }
+        }
+
+        // On to actual EPA alg with a valid tetrahedron simplex
+        // Initialize EPA polytope from simplex
+        var poly = new EpaPolytope();
+        double[] centroid = new double[3];
+        InitEpaPolytope(poly, simplex, centroid);
+
+        // EPA iteration parameters
+        const int maxIterations = 64;
+        const double tolerance = _gkEpsilon * 1e2;
+        int iteration = 0;
+
+        // Main EPA loop
+        while (iteration < maxIterations && poly.NumVertices < EpaPolytope.MaxEpaVertices - 1)
+        {
+            iteration++;
+
+            // Recompute normals & distances for assigned faces
+            for (int i = 0; i < poly.MaxFaceIndex; ++i)
+            {
+                if (poly.Faces[i].Valid)
+                {
+                    ComputeFaceNormalDistance(poly, i);
+                }
+            }
+
+            // Find the closest face
+            int closestFace = -1;
+            double closestDistance = 1e10;
+
+            for (int i = 0; i < poly.MaxFaceIndex; ++i)
+            {
+                if (!poly.Faces[i].Valid)
+                {
+                    continue;
+                }
+                if (poly.Faces[i].Distance >= 0 && poly.Faces[i].Distance < closestDistance)
+                {
+                    closestDistance = poly.Faces[i].Distance;
+                    closestFace = i;
+                }
+            }
+
+            if (closestFace < 0)
+            {
+                break;
+            }
+
+            EpaFace closest = poly.Faces[closestFace];
+
+            // Get support point in direction of closest face normal
+            double[] newVertex = new double[3];
+            int[] newVertexIdx = new int[2];
+            SupportEpa(bd1, bd2, closest.Normal, newVertex, newVertexIdx);
+
+            // Check termination condition: if distance to new vertex along normal
+            // is not more than tolerance further than closest face
+            double distToNew = DotProduct(closest.Normal, newVertex);
+            double improvement = distToNew - closestDistance;
+
+            if (improvement < tolerance)
+            {
+                // Converged, compute witness points with bary coords
+                ComputeBarycentricOrigin(poly.Vertices[closest.V[0]],
+                    poly.Vertices[closest.V[1]],
+                    poly.Vertices[closest.V[2]], out double a0, out double a1, out double a2);
+                for (int i = 0; i < 3; i++)
+                {
+                    simplex.Witnesses[0, i] = bd1.Coord[closest.VIdx[0][0]][i] * a0
+                        + bd1.Coord[closest.VIdx[1][0]][i] * a1
+                        + bd1.Coord[closest.VIdx[2][0]][i] * a2;
+                    simplex.Witnesses[1, i] = bd2.Coord[closest.VIdx[0][1]][i] * a0
+                        + bd2.Coord[closest.VIdx[1][1]][i] * a1
+                        + bd2.Coord[closest.VIdx[2][1]][i] * a2;
+                    contactNormal[i] = closest.Normal[i];
+                }
+                distance = -closestDistance;
+                break;
+            }
+
+            // Check if new vertex is duplicate
+            bool isDuplicate = false;
+            for (int i = 0; i < poly.NumVertices; i++)
+            {
+                double dx = newVertex[0] - poly.Vertices[i][0];
+                double dy = newVertex[1] - poly.Vertices[i][1];
+                double dz = newVertex[2] - poly.Vertices[i][2];
+                if (dx * dx + dy * dy + dz * dz < epsSq)
+                {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+
+            if (isDuplicate)
+            {
+                // Can't make progress, use current best
+                ComputeBarycentricOrigin(poly.Vertices[closest.V[0]],
+                    poly.Vertices[closest.V[1]],
+                    poly.Vertices[closest.V[2]], out double a0, out double a1, out double a2);
+                for (int i = 0; i < 3; i++)
+                {
+                    simplex.Witnesses[0, i] = bd1.Coord[closest.VIdx[0][0]][i] * a0
+                        + bd1.Coord[closest.VIdx[1][0]][i] * a1
+                        + bd1.Coord[closest.VIdx[2][0]][i] * a2;
+                    simplex.Witnesses[1, i] = bd2.Coord[closest.VIdx[0][1]][i] * a0
+                        + bd2.Coord[closest.VIdx[1][1]][i] * a1
+                        + bd2.Coord[closest.VIdx[2][1]][i] * a2;
+                    contactNormal[i] = closest.Normal[i];
+                }
+                distance = -closestDistance;
+                break;
+            }
+
+            // Add new vertex to polytope
+            int newVertexId = poly.NumVertices;
+            for (int i = 0; i < 3; i++)
+            {
+                poly.Vertices[newVertexId][i] = newVertex[i];
+            }
+            poly.VertexIndices[newVertexId][0] = newVertexIdx[0];
+            poly.VertexIndices[newVertexId][1] = newVertexIdx[1];
+            poly.NumVertices++;
+
+            // Update centroid incrementally (running mean)
+            double invN = 1.0 / poly.NumVertices;
+            for (int i = 0; i < 3; i++)
+            {
+                centroid[i] += (newVertex[i] - centroid[i]) * invN;
+            }
+
+            // Find horizon edges: collect edges from faces being removed this iteration
+            // only, then mark them invalid. Collecting from ALL invalid faces (including
+            // ones from previous iterations) would pull in stale interior edges.
+            var edges = new EpaEdge[EpaPolytope.MaxEpaFaces * 3];
+            int numEdges = 0;
+
+            for (int f = 0; f < poly.MaxFaceIndex; f++)
+            {
+                if (!poly.Faces[f].Valid)
+                {
+                    continue;
+                }
+                if (!IsFaceVisible(poly, f, newVertex))
+                {
+                    continue;
+                }
+
+                // Collect edges before invalidating the face
+                for (int e = 0; e < 3; e++)
+                {
+                    if (numEdges >= EpaPolytope.MaxEpaFaces * 3)
+                    {
+                        break;
+                    }
+
+                    int va = e;
+                    int vb = (e + 1) % 3;
+                    edges[numEdges] = new EpaEdge
+                    {
+                        V1 = poly.Faces[f].V[va],
+                        V2 = poly.Faces[f].V[vb],
+                        VIdx1 = [poly.Faces[f].VIdx[va][0], poly.Faces[f].VIdx[va][1]],
+                        VIdx2 = [poly.Faces[f].VIdx[vb][0], poly.Faces[f].VIdx[vb][1]],
+                        Valid = true,
+                    };
+                    numEdges++;
+                }
+
+                poly.Faces[f].Valid = false;
+            }
+
+            // Remove duplicate edges (edges shared by two removed faces)
+            for (int i = 0; i < numEdges; i++)
+            {
+                if (!edges[i].Valid)
+                {
+                    continue;
+                }
+
+                for (int j = i + 1; j < numEdges; j++)
+                {
+                    if (!edges[j].Valid)
+                    {
+                        continue;
+                    }
+
+                    // Check if same edge (either direction)
+                    if ((edges[i].V1 == edges[j].V1 && edges[i].V2 == edges[j].V2) ||
+                        (edges[i].V1 == edges[j].V2 && edges[i].V2 == edges[j].V1))
+                    {
+                        edges[i].Valid = false;
+                        edges[j].Valid = false;
+                    }
+                }
+            }
+
+            // Create new faces from horizon edges
+            for (int i = 0; i < numEdges; i++)
+            {
+                if (!edges[i].Valid)
+                {
+                    continue;
+                }
+
+                // Find next available face slot
+                int newFaceIdx = -1;
+                for (int j = 0; j < EpaPolytope.MaxEpaFaces; j++)
+                {
+                    if (!poly.Faces[j].Valid)
+                    {
+                        newFaceIdx = j;
+                        break;
+                    }
+                }
+
+                if (newFaceIdx < 0 || newFaceIdx >= EpaPolytope.MaxEpaFaces)
+                {
+                    break;
+                }
+
+                // Create new face: edge horizon vertices + new vertex
+                EpaFace newFace = poly.Faces[newFaceIdx];
+                newFace.V[0] = edges[i].V1;
+                newFace.V[1] = edges[i].V2;
+                newFace.V[2] = newVertexId;
+
+                newFace.VIdx[0][0] = edges[i].VIdx1[0];
+                newFace.VIdx[0][1] = edges[i].VIdx1[1];
+                newFace.VIdx[1][0] = edges[i].VIdx2[0];
+                newFace.VIdx[1][1] = edges[i].VIdx2[1];
+                newFace.VIdx[2][0] = newVertexIdx[0];
+                newFace.VIdx[2][1] = newVertexIdx[1];
+
+                newFace.Valid = true;
+
+                // Check winding and fix if necessary
+                double[] fv0 = poly.Vertices[newFace.V[0]];
+                double[] fv1 = poly.Vertices[newFace.V[1]];
+                double[] fv2 = poly.Vertices[newFace.V[2]];
+
+                double[] fe0 = new double[3];
+                double[] fe1 = new double[3];
+                double[] fnormal = new double[3];
+
+                for (int c = 0; c < 3; c++)
+                {
+                    fe0[c] = fv1[c] - fv0[c];
+                    fe1[c] = fv2[c] - fv0[c];
+                }
+                CrossProduct(fe0, fe1, fnormal);
+
+                // If normal points toward centroid flip winding
+                double[] toCent = new double[3];
+                for (int c = 0; c < 3; c++)
+                {
+                    toCent[c] = centroid[c] - fv0[c];
+                }
+                if (DotProduct(fnormal, toCent) > 0)
+                {
+                    (newFace.V[1], newFace.V[2]) = (newFace.V[2], newFace.V[1]);
+                    (newFace.VIdx[1], newFace.VIdx[2]) = (newFace.VIdx[2], newFace.VIdx[1]);
+                }
+
+                // Update max face index
+                if (newFaceIdx >= poly.MaxFaceIndex)
+                {
+                    poly.MaxFaceIndex = newFaceIdx + 1;
+                }
+            }
+        }
+
+        // If we exited due to max iterations, recompute closest face and use it
+        if (iteration >= maxIterations)
+        {
+            // Find closest face and compute result
+            for (int i = 0; i < poly.MaxFaceIndex; ++i)
+            {
+                if (!poly.Faces[i].Valid)
+                {
+                    continue;
+                }
+                ComputeFaceNormalDistance(poly, i);
+            }
+
+            int closestFace = -1;
+            double closestDistance = 1e10;
+            for (int i = 0; i < poly.MaxFaceIndex; ++i)
+            {
+                if (!poly.Faces[i].Valid)
+                {
+                    continue;
+                }
+                if (poly.Faces[i].Distance >= 0 && poly.Faces[i].Distance < closestDistance)
+                {
+                    closestDistance = poly.Faces[i].Distance;
+                    closestFace = i;
+                }
+            }
+
+            if (closestFace >= 0)
+            {
+                EpaFace closest = poly.Faces[closestFace];
+                ComputeBarycentricOrigin(poly.Vertices[closest.V[0]],
+                    poly.Vertices[closest.V[1]],
+                    poly.Vertices[closest.V[2]], out double a0, out double a1, out double a2);
+                for (int i = 0; i < 3; i++)
+                {
+                    simplex.Witnesses[0, i] = bd1.Coord[closest.VIdx[0][0]][i] * a0
+                        + bd1.Coord[closest.VIdx[1][0]][i] * a1
+                        + bd1.Coord[closest.VIdx[2][0]][i] * a2;
+                    simplex.Witnesses[1, i] = bd2.Coord[closest.VIdx[0][1]][i] * a0
+                        + bd2.Coord[closest.VIdx[1][1]][i] * a1
+                        + bd2.Coord[closest.VIdx[2][1]][i] * a2;
+                    contactNormal[i] = closest.Normal[i];
+                }
+                distance = -closestDistance;
+            }
         }
     }
 

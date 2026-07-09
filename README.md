@@ -6,13 +6,13 @@ This project is inspired by the original [openGJK](https://github.com/MattiaMont
 You can install `OpenGJKSharp` via NuGet:
 
 ``` bash
-dotnet add package OpenGJKSharp --version 0.0.5
+dotnet add package OpenGJKSharp --version 0.1.0
 ```
 
 Or using the Package Manager:
 
 ``` bash
-Install-Package OpenGJKSharp -Version 0.0.5
+Install-Package OpenGJKSharp -Version 0.1.0
 ```
 
 ## Usage
@@ -56,3 +56,23 @@ Console.WriteLine($"Collision detected: {hasCollision}"); // Outputs: true
 The following image illustrates the collision between the two cubes:
 
 ![Collision Example](https://raw.githubusercontent.com/HanJaeJoon/OpenGJKSharp/refs/heads/main/example.png)
+
+### Penetration depth and contact normal (EPA)
+
+`ComputeCollisionInformation` runs the GJK algorithm and, when a collision is detected,
+the EPA (Expanding Polytope Algorithm) to compute the penetration depth and contact normal:
+
+``` c#
+double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+
+if (distance < 0)
+{
+    // Colliding: -distance is the penetration depth, contactNormal is the contact normal
+    Console.WriteLine($"Penetration depth: {-distance}, normal: {contactNormal}");
+}
+else
+{
+    // Separated: distance is the minimum distance between the two bodies
+    Console.WriteLine($"Distance: {distance}");
+}
+```

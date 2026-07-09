@@ -179,4 +179,81 @@ public class OpenGjkSharpTests
 
         Assert.True(hasCollision);
     }
+
+    [Fact]
+    public void Should_ReturnPenetrationDepth_When_TwoCubesOverlap()
+    {
+        // Unit cube [0, 1]^3
+        var a = new Vector3[]
+        {
+            new(0, 0, 0),
+            new(1, 0, 0),
+            new(0, 1, 0),
+            new(1, 1, 0),
+            new(0, 0, 1),
+            new(1, 0, 1),
+            new(0, 1, 1),
+            new(1, 1, 1),
+        };
+
+        // Same cube shifted by +0.5 along x only: minimum penetration is 0.5 along x
+        var b = a.Select(p => p + new Vector3(0.5f, 0, 0)).ToArray();
+
+        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+
+        Assert.True(distance < 0);
+        Assert.Equal(0.5, -distance, 6);
+        Assert.Equal(1.0, Math.Abs(contactNormal.X), 6);
+        Assert.Equal(0.0, contactNormal.Y, 6);
+        Assert.Equal(0.0, contactNormal.Z, 6);
+    }
+
+    [Fact]
+    public void Should_ReturnSeparationDistance_When_TwoCubesDoNotCollide()
+    {
+        var a = new Vector3[]
+        {
+            new(0, 0, 0),
+            new(1, 0, 0),
+            new(0, 1, 0),
+            new(1, 1, 0),
+            new(0, 0, 1),
+            new(1, 0, 1),
+            new(0, 1, 1),
+            new(1, 1, 1),
+        };
+
+        // Same cube shifted by +2 along x: separated by 1
+        var b = a.Select(p => p + new Vector3(2f, 0, 0)).ToArray();
+
+        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+
+        Assert.Equal(1.0, distance, 6);
+        Assert.Equal(1.0, contactNormal.X, 6);
+    }
+
+    [Fact]
+    public void Should_ReturnDeeperPenetrationDepth_When_CubesOverlapMore()
+    {
+        var a = new Vector3[]
+        {
+            new(0, 0, 0),
+            new(1, 0, 0),
+            new(0, 1, 0),
+            new(1, 1, 0),
+            new(0, 0, 1),
+            new(1, 0, 1),
+            new(0, 1, 1),
+            new(1, 1, 1),
+        };
+
+        // Shifted by +0.2 along x: minimum penetration is 0.8 along x
+        var b = a.Select(p => p + new Vector3(0.2f, 0, 0)).ToArray();
+
+        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+
+        Assert.True(distance < 0);
+        Assert.Equal(0.8, -distance, 6);
+        Assert.Equal(1.0, Math.Abs(contactNormal.X), 6);
+    }
 }
