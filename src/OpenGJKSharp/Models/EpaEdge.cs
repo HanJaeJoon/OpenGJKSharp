@@ -6,19 +6,24 @@ namespace OpenGJKSharp.Models;
 internal class EpaEdge
 {
     /// <summary>
-    /// Vertex indices in polytope.
+    /// First vertex index in polytope.
     /// </summary>
-    public int V1, V2;
+    public int V1 { get; init; }
 
     /// <summary>
-    /// Original vertex indices for witness computation.
+    /// Second vertex index in polytope.
     /// </summary>
-    public int[] VIdx1 = new int[2];
+    public int V2 { get; init; }
 
     /// <summary>
-    /// Original vertex indices for witness computation.
+    /// Original vertex indices of <see cref="V1"/> for witness computation.
     /// </summary>
-    public int[] VIdx2 = new int[2];
+    public int[] VIdx1 { get; init; } = new int[2];
 
-    public bool Valid;
+    /// <summary>
+    /// Original vertex indices of <see cref="V2"/> for witness computation.
+    /// </summary>
+    public int[] VIdx2 { get; init; } = new int[2];
+
+    public bool Valid { get; set; }
 }

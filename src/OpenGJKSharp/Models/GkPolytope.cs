@@ -11,22 +11,22 @@ public class GkPolytope
     /// <summary>
     /// Number of points defining the polytope.
     /// </summary>
-    public required int NumPoints;
+    public required int NumPoints { get; init; }
 
     /// <summary>
     /// Furthest point returned by the support function and updated at each GJK-iteration.
     /// For the first iteration this value is a guess - and this guess not irrelevant.
     /// </summary>
-    public double[] S = new double[3];
+    public double[] S { get; } = new double[3];
 
     /// <summary>
     /// Index of the furthest point returned by the support function.
     /// </summary>
-    public int SIdx;
+    public int SIdx { get; set; }
 
     /// <summary>
     /// Coordinates of the points of the polytope.
     /// This is owned by user who manages and garbage-collects the memory for these coordinates.
     /// </summary>
-    public required double[][] Coord;
+    public required double[][] Coord { get; init; }
 }

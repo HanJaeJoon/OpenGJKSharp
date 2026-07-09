@@ -6,13 +6,13 @@ namespace OpenGJKSharp;
 public static class OpenGJKSharp
 {
     private const double _gkEpsilon = 2.2204460492503131e-16; // DBL_EPSILON
-    private const double _presicion = 1e-6;
+    private const double _precision = 1e-6;
 
-    public static bool HasCollision(Vector3[] a, Vector3[] b, double precision = _presicion)
+    public static bool HasCollision(Vector3[] a, Vector3[] b, double precision = _precision)
     {
         if (precision < 0)
         {
-            precision = _presicion;
+            precision = _precision;
         }
 
         double distance = ComputeMinimumDistance(GetGkPolytope(a), GetGkPolytope(b));
@@ -37,11 +37,11 @@ public static class OpenGJKSharp
         }
     }
 
-    public static bool HasCollision(Vector2[] a, Vector2[] b, double precision = _presicion)
+    public static bool HasCollision(Vector2[] a, Vector2[] b, double precision = _precision)
     {
         if (precision < 0)
         {
-            precision = _presicion;
+            precision = _precision;
         }
 
         double distance = ComputeMinimumDistance(GetGkPolytope(a), GetGkPolytope(b));
@@ -1499,7 +1499,7 @@ public static class OpenGJKSharp
                 e12[i] = v2[i] - v1[i];
             }
             double t = -DotProduct(v1, e12) / DotProduct(e12, e12);
-            t = Math.Max(0.0, Math.Min(1.0, t));
+            t = Math.Clamp(t, 0.0, 1.0);
             a0 = 0;
             a1 = 1.0 - t;
             a2 = t;
@@ -1508,7 +1508,7 @@ public static class OpenGJKSharp
         {
             // Origin projects outside edge v0-v2
             double t = -DotProduct(v0, e1) / DotProduct(e1, e1);
-            t = Math.Max(0.0, Math.Min(1.0, t));
+            t = Math.Clamp(t, 0.0, 1.0);
             a0 = 1.0 - t;
             a1 = 0;
             a2 = t;
@@ -1517,7 +1517,7 @@ public static class OpenGJKSharp
         {
             // Origin projects outside edge v0-v1
             double t = -DotProduct(v0, e0) / DotProduct(e0, e0);
-            t = Math.Max(0.0, Math.Min(1.0, t));
+            t = Math.Clamp(t, 0.0, 1.0);
             a0 = 1.0 - t;
             a1 = t;
             a2 = 0;

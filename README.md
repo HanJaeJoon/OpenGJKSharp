@@ -6,13 +6,13 @@ This project is inspired by the original [openGJK](https://github.com/MattiaMont
 You can install `OpenGJKSharp` via NuGet:
 
 ``` bash
-dotnet add package OpenGJKSharp --version 0.1.0
+dotnet add package OpenGJKSharp --version 0.2.0
 ```
 
 Or using the Package Manager:
 
 ``` bash
-Install-Package OpenGJKSharp -Version 0.1.0
+Install-Package OpenGJKSharp -Version 0.2.0
 ```
 
 ## Usage

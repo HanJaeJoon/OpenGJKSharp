@@ -9,25 +9,25 @@ internal class EpaFace
     /// <summary>
     /// Vertex indices in the polytope.
     /// </summary>
-    public int[] V = new int[3];
+    public int[] V { get; } = new int[3];
 
     /// <summary>
     /// Original vertex indices from original polytopes for witness computation [vertex][body].
     /// </summary>
-    public int[][] VIdx = [new int[2], new int[2], new int[2]];
+    public int[][] VIdx { get; } = [new int[2], new int[2], new int[2]];
 
     /// <summary>
     /// Face normal (pointing outward from origin).
     /// </summary>
-    public double[] Normal = new double[3];
+    public double[] Normal { get; } = new double[3];
 
     /// <summary>
     /// Distance from origin to face plane.
     /// </summary>
-    public double Distance;
+    public double Distance { get; set; }
 
     /// <summary>
     /// Whether this face is still valid (not removed).
     /// </summary>
-    public bool Valid;
+    public bool Valid { get; set; }
 }

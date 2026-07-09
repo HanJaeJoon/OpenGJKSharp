@@ -1,3 +1,4 @@
+using OpenGJKSharp.Models;
 using System.Numerics;
 
 namespace OpenGJKSharp.Tests;
@@ -256,4 +257,102 @@ public class OpenGjkSharpTests
         Assert.Equal(0.8, -distance, 6);
         Assert.Equal(1.0, Math.Abs(contactNormal.X), 6);
     }
+
+    [Fact]
+    public void Should_ReturnFalse_When_Two3DCubesDoNotOverlap()
+    {
+        Vector3[] a = UnitCube();
+        Vector3[] b = [.. a.Select(p => p + new Vector3(3f, 0, 0))];
+
+        bool hasCollision = OpenGJKSharp.HasCollision(a, b);
+
+        Assert.False(hasCollision);
+    }
+
+    [Fact]
+    public void Should_ReturnFalse_When_2DRectanglesDoNotOverlap()
+    {
+        Vector2[] a = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
+        Vector2[] b = [new(2, 2), new(3, 2), new(3, 3), new(2, 3)];
+
+        bool hasCollision = OpenGJKSharp.HasCollision(a, b);
+
+        Assert.False(hasCollision);
+    }
+
+    [Fact]
+    public void Should_ComputeWitnessPoints_When_CubesAreSeparated()
+    {
+        Vector3[] a = UnitCube();
+        Vector3[] b = [.. a.Select(p => p + new Vector3(2f, 0, 0))];
+
+        var simplex = new GkSimplex();
+        double distance = OpenGJKSharp.ComputeMinimumDistance(ToGkPolytope(a), ToGkPolytope(b), simplex);
+
+        Assert.Equal(1.0, distance, 6);
+
+        // Closest points lie on the x = 1 face of cube A and the x = 2 face of cube B
+        Assert.Equal(1.0, simplex.Witnesses[0, 0], 6);
+        Assert.Equal(2.0, simplex.Witnesses[1, 0], 6);
+    }
+
+    [Fact]
+    public void Should_ReturnZeroPenetration_When_CubesAreIdentical()
+    {
+        // Identical cubes are a degenerate case for GJK/EPA: the initial search
+        // direction (vertex A[0] - vertex B[0]) is the zero vector, so the reference
+        // implementation reports a penetration depth of zero.
+        Vector3[] a = UnitCube();
+        Vector3[] b = UnitCube();
+
+        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out _);
+
+        Assert.True(Math.Abs(distance) < 1e-6);
+        Assert.True(OpenGJKSharp.HasCollision(a, b));
+    }
+
+    [Fact]
+    public void Should_ReturnZeroPenetration_When_CubesTouchFaceToFace()
+    {
+        Vector3[] a = UnitCube();
+        Vector3[] b = [.. a.Select(p => p + new Vector3(1f, 0, 0))];
+
+        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out _);
+
+        Assert.True(Math.Abs(distance) < 1e-6);
+    }
+
+    [Fact]
+    public void Should_ReturnPenetrationDepth_When_CubesOverlapDiagonally()
+    {
+        Vector3[] a = UnitCube();
+
+        // Shifted by (+0.5, +0.5, 0): minimum penetration is 0.5 along x or y
+        Vector3[] b = [.. a.Select(p => p + new Vector3(0.5f, 0.5f, 0))];
+
+        double distance = OpenGJKSharp.ComputeCollisionInformation(a, b, out Vector3 contactNormal);
+
+        Assert.True(distance < 0);
+        Assert.Equal(0.5, -distance, 6);
+        Assert.Equal(1.0, Math.Max(Math.Abs(contactNormal.X), Math.Abs(contactNormal.Y)), 6);
+        Assert.Equal(0.0, contactNormal.Z, 6);
+    }
+
+    private static Vector3[] UnitCube() =>
+    [
+        new(0, 0, 0),
+        new(1, 0, 0),
+        new(0, 1, 0),
+        new(1, 1, 0),
+        new(0, 0, 1),
+        new(1, 0, 1),
+        new(0, 1, 1),
+        new(1, 1, 1),
+    ];
+
+    private static GkPolytope ToGkPolytope(Vector3[] points) => new()
+    {
+        NumPoints = points.Length,
+        Coord = [.. points.Select(p => (double[])[p.X, p.Y, p.Z])],
+    };
 }
