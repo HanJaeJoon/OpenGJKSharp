@@ -14,6 +14,13 @@
     <PackageTags>GJK, Gilbert-Johnson-Keerthi, Algorithm, 3D, CollisionDetection, CSharp, .NET</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <!-- SourceLink: 패키지 사용자가 디버깅 시 GitHub 소스로 step-in 가능 -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <ItemGroup>
