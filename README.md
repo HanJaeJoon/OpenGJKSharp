@@ -1,18 +1,26 @@
 ## OpenGJKSharp
+
+[![NuGet](https://img.shields.io/nuget/v/OpenGJKSharp)](https://www.nuget.org/packages/OpenGJKSharp)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/OpenGJKSharp)](https://www.nuget.org/packages/OpenGJKSharp)
+[![Build](https://github.com/HanJaeJoon/OpenGJKSharp/actions/workflows/nuget-publish.yml/badge.svg)](https://github.com/HanJaeJoon/OpenGJKSharp/actions/workflows/nuget-publish.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
 OpenGJKSharp is a C# native implementation of the GJK (Gilbert-Johnson-Keerthi) algorithm, designed for efficient collision detection between convex polyhedra in 3D space.
 This project is inspired by the original [openGJK](https://github.com/MattiaMontanari/openGJK) (written in C) and reimagined for the .NET ecosystem.
+
+Targets `netstandard2.1` and `net8.0`, so it can be used from .NET Core 3.0+, .NET 5+, Unity 2021.2+, and Mono.
 
 ## Installation
 You can install `OpenGJKSharp` via NuGet:
 
 ``` bash
-dotnet add package OpenGJKSharp --version 0.3.0
+dotnet add package OpenGJKSharp
 ```
 
 Or using the Package Manager:
 
 ``` bash
-Install-Package OpenGJKSharp -Version 0.3.0
+Install-Package OpenGJKSharp
 ```
 
 > **Note:** Starting with 0.3.0, the entry-point class is named `OpenGjk`
