@@ -24,7 +24,10 @@ public static class OpenGjk
     public static bool HasCollision(Vector3[] a, Vector3[] b, double precision = _precision)
     {
         ValidateVertices(a, b);
-        ArgumentOutOfRangeException.ThrowIfNegative(precision);
+        if (precision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(precision), precision, "Precision must not be negative.");
+        }
 
         double distance = ComputeMinimumDistance(ToGkPolytope(a), ToGkPolytope(b));
 
@@ -42,7 +45,10 @@ public static class OpenGjk
     public static bool HasCollision(Vector2[] a, Vector2[] b, double precision = _precision)
     {
         ValidateVertices(a, b);
-        ArgumentOutOfRangeException.ThrowIfNegative(precision);
+        if (precision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(precision), precision, "Precision must not be negative.");
+        }
 
         double distance = ComputeMinimumDistance(ToGkPolytope(a), ToGkPolytope(b));
 
@@ -201,8 +207,15 @@ public static class OpenGjk
 
     private static void ValidateNotNullOrEmpty<T>(T[] a, T[] b)
     {
-        ArgumentNullException.ThrowIfNull(a);
-        ArgumentNullException.ThrowIfNull(b);
+        if (a is null)
+        {
+            throw new ArgumentNullException(nameof(a));
+        }
+
+        if (b is null)
+        {
+            throw new ArgumentNullException(nameof(b));
+        }
 
         if (a.Length == 0)
         {
@@ -217,7 +230,10 @@ public static class OpenGjk
 
     private static void ValidatePolytope(GkPolytope polytope, string paramName)
     {
-        ArgumentNullException.ThrowIfNull(polytope, paramName);
+        if (polytope is null)
+        {
+            throw new ArgumentNullException(paramName);
+        }
 
         if (polytope.NumPoints < 1 || polytope.NumPoints > polytope.Coord.Length)
         {
@@ -338,7 +354,10 @@ public static class OpenGjk
     {
         ValidatePolytope(bd1, nameof(bd1));
         ValidatePolytope(bd2, nameof(bd2));
-        ArgumentNullException.ThrowIfNull(s);
+        if (s is null)
+        {
+            throw new ArgumentNullException(nameof(s));
+        }
 
         uint k = 0; // Iteration counter
         const int mk = 25; // Maximum number of GJK iterations
