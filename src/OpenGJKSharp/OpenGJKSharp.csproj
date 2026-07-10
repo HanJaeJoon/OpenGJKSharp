@@ -1,7 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Version>0.3.0</Version>
@@ -22,6 +23,11 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- netstandard2.1에서 init/required 등 최신 C# 기능에 필요한 타입을 컴파일 타임에 생성 (런타임 의존성 없음) -->
+    <PackageReference Include="PolySharp" Version="1.15.0" PrivateAssets="all" Condition="'$(TargetFramework)' == 'netstandard2.1'" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
