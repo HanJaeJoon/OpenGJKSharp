@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*' # 릴리스 태그(v<버전>) push 시에만 배포
   pull_request:
     branches:
       - main
@@ -13,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write # 릴리스 태그 push용
+      contents: read
       id-token: write # Trusted Publishing용 GitHub OIDC 토큰 발급 허용
 
     steps:
@@ -37,32 +39,26 @@ jobs:
       - name: Pack
         run: dotnet pack --configuration Release --no-build --output ./nupkg
 
+      # 배포 전 태그(v<버전>)와 csproj의 <Version>이 일치하는지 검증
+      - name: Verify tag matches csproj version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=$(grep -oPm1 '(?<=<Version>)[^<]+' src/OpenGJKSharp/OpenGJKSharp.csproj)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" != "$TAG_VERSION" ]; then
+            echo "csproj version ($VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+
       # Trusted Publishing: OIDC 토큰을 1시간짜리 임시 API 키로 교환
       # (nuget.org -> 계정 -> Trusted Publishing 정책 등록 필요)
       - name: NuGet login (OIDC -> temp API key)
-        if: github.ref == 'refs/heads/main'
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: NuGet/login@v1
         id: login
         with:
           user: JaejoonHan # nuget.org 프로필명
 
       - name: Publish to NuGet
-        if: github.ref == 'refs/heads/main'  # main 브랜치에서만 배포
+        if: startsWith(github.ref, 'refs/tags/v')
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-
-      # 배포된 버전에 릴리스 태그(v<버전>)를 자동으로 push (이미 있으면 스킵)
-      - name: Tag release
-        if: github.ref == 'refs/heads/main'
-        run: |
-          VERSION=$(grep -oPm1 '(?<=<Version>)[^<]+' src/OpenGJKSharp/OpenGJKSharp.csproj)
-          if [ -z "$VERSION" ]; then
-            echo "Version not found in csproj"; exit 1
-          fi
-          if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
-            echo "Tag v$VERSION already exists, skipping"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag -a "v$VERSION" -m "Release v$VERSION"
-            git push origin "v$VERSION"
-          fi
