@@ -10,12 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `netstandard2.1` target: the package can now be used from .NET Core 3.0+, Unity 2021.2+, and Mono in addition to .NET 8
+- `netstandard2.0` target: the package can now be used from .NET Framework 4.6.2+ (via `System.Numerics.Vectors`)
 - `net10.0` target for the current LTS runtime; tests now run on both .NET 8 and .NET 10
 - SourceLink and symbol package (`.snupkg`) for source-level debugging
+- Package icon and richer NuGet metadata (repository type, copyright, release notes link)
+- License section in README clarifying GPL-3.0 copyleft implications
 
 ### Changed
 
 - NuGet publishing now happens only on `v*` release tag push (previously on every push to `main`), with a tag-vs-csproj version check
+
+### Deprecated
+
+- `OpenGjk.CsFunction` (legacy openGJK C interface, already `[Obsolete]`) will be removed in the next major version - use `ComputeMinimumDistance` instead
 
 ## [0.3.0] - 2026-07-10
 

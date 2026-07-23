@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1;net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net8.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -14,6 +14,10 @@
     <RepositoryUrl>https://github.com/HanJaeJoon/OpenGJKSharp.git</RepositoryUrl>
     <PackageTags>GJK, Gilbert-Johnson-Keerthi, Algorithm, 3D, CollisionDetection, CSharp, .NET</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <RepositoryType>git</RepositoryType>
+    <Copyright>Copyright (c) HanJaeJoon</Copyright>
+    <PackageReleaseNotes>See https://github.com/HanJaeJoon/OpenGJKSharp/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 
     <!-- SourceLink: 패키지 사용자가 디버깅 시 GitHub 소스로 step-in 가능 -->
@@ -25,13 +29,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- netstandard2.1에서 init/required 등 최신 C# 기능에 필요한 타입을 컴파일 타임에 생성 (런타임 의존성 없음) -->
-    <PackageReference Include="PolySharp" Version="1.15.0" PrivateAssets="all" Condition="'$(TargetFramework)' == 'netstandard2.1'" />
+    <!-- netstandard에서 init/required 등 최신 C# 기능에 필요한 타입을 컴파일 타임에 생성 (런타임 의존성 없음) -->
+    <PackageReference Include="PolySharp" Version="1.15.0" PrivateAssets="all" Condition="$(TargetFramework.StartsWith('netstandard'))" />
+    <!-- netstandard2.0(.NET Framework)에는 System.Numerics.Vector3가 없음 -->
+    <PackageReference Include="System.Numerics.Vectors" Version="4.6.1" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\example.png" Pack="true" PackagePath="\" />
+    <None Include="..\..\icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

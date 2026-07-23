@@ -8,7 +8,7 @@
 OpenGJKSharp is a C# native implementation of the GJK (Gilbert-Johnson-Keerthi) algorithm, designed for efficient collision detection between convex polyhedra in 3D space.
 This project is inspired by the original [openGJK](https://github.com/MattiaMontanari/openGJK) (written in C) and reimagined for the .NET ecosystem.
 
-Targets `netstandard2.1`, `net8.0`, and `net10.0`, so it can be used from .NET Core 3.0+, .NET 5+, Unity 2021.2+, and Mono.
+Targets `netstandard2.0`, `netstandard2.1`, `net8.0`, and `net10.0`, so it can be used from .NET Framework 4.6.2+, .NET Core 2.0+, .NET 5+, Unity 2021.2+, and Mono.
 
 ## Installation
 You can install `OpenGJKSharp` via NuGet:
@@ -104,3 +104,10 @@ Console.WriteLine($"Closest points: {closestA} <-> {closestB}");
 
 `HasCollision` and `ComputeMinimumDistance` also accept `Vector2[]` polygons
 (treated as flat shapes on the z = 0 plane).
+
+## License
+
+OpenGJKSharp is licensed under [GPL-3.0](LICENSE), following the upstream
+[openGJK](https://github.com/MattiaMontanari/openGJK) project. Note that GPL-3.0
+has copyleft requirements — if you plan to use this library in closed-source or
+commercial software, please review the license terms carefully.

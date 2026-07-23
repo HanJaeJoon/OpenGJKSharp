@@ -169,7 +169,7 @@ public static class OpenGjk
 
         for (int i = 0; i < a.Length; i++)
         {
-            if (!float.IsFinite(a[i].X) || !float.IsFinite(a[i].Y) || !float.IsFinite(a[i].Z))
+            if (!IsFinite(a[i].X) || !IsFinite(a[i].Y) || !IsFinite(a[i].Z))
             {
                 throw new ArgumentException($"Vertex at index {i} contains a non-finite coordinate: {a[i]}.", nameof(a));
             }
@@ -177,7 +177,7 @@ public static class OpenGjk
 
         for (int i = 0; i < b.Length; i++)
         {
-            if (!float.IsFinite(b[i].X) || !float.IsFinite(b[i].Y) || !float.IsFinite(b[i].Z))
+            if (!IsFinite(b[i].X) || !IsFinite(b[i].Y) || !IsFinite(b[i].Z))
             {
                 throw new ArgumentException($"Vertex at index {i} contains a non-finite coordinate: {b[i]}.", nameof(b));
             }
@@ -190,7 +190,7 @@ public static class OpenGjk
 
         for (int i = 0; i < a.Length; i++)
         {
-            if (!float.IsFinite(a[i].X) || !float.IsFinite(a[i].Y))
+            if (!IsFinite(a[i].X) || !IsFinite(a[i].Y))
             {
                 throw new ArgumentException($"Vertex at index {i} contains a non-finite coordinate: {a[i]}.", nameof(a));
             }
@@ -198,7 +198,7 @@ public static class OpenGjk
 
         for (int i = 0; i < b.Length; i++)
         {
-            if (!float.IsFinite(b[i].X) || !float.IsFinite(b[i].Y))
+            if (!IsFinite(b[i].X) || !IsFinite(b[i].Y))
             {
                 throw new ArgumentException($"Vertex at index {i} contains a non-finite coordinate: {b[i]}.", nameof(b));
             }
@@ -1734,7 +1734,7 @@ public static class OpenGjk
                 e12[i] = v2[i] - v1[i];
             }
             double t = -DotProduct(v1, e12) / DotProduct(e12, e12);
-            t = Math.Clamp(t, 0.0, 1.0);
+            t = Clamp01(t);
             a0 = 0;
             a1 = 1.0 - t;
             a2 = t;
@@ -1743,7 +1743,7 @@ public static class OpenGjk
         {
             // Origin projects outside edge v0-v2
             double t = -DotProduct(v0, e1) / DotProduct(e1, e1);
-            t = Math.Clamp(t, 0.0, 1.0);
+            t = Clamp01(t);
             a0 = 1.0 - t;
             a1 = 0;
             a2 = t;
@@ -1752,7 +1752,7 @@ public static class OpenGjk
         {
             // Origin projects outside edge v0-v1
             double t = -DotProduct(v0, e0) / DotProduct(e0, e0);
-            t = Math.Clamp(t, 0.0, 1.0);
+            t = Clamp01(t);
             a0 = 1.0 - t;
             a1 = t;
             a2 = 0;
@@ -1764,6 +1764,23 @@ public static class OpenGjk
             a1 = u;
             a2 = v;
         }
+    }
+
+    // float.IsFinite is unavailable on netstandard2.0
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
+    }
+
+    // Math.Clamp is unavailable on netstandard2.0
+    private static double Clamp01(double value)
+    {
+        if (value < 0.0)
+        {
+            return 0.0;
+        }
+
+        return value > 1.0 ? 1.0 : value;
     }
 
     // Support function for EPA, basically the GJK one but only cares about the Minkowski difference point

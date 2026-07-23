@@ -392,10 +392,10 @@ public class OpenGjkSharpTests
 
             double distance = OpenGjk.ComputeMinimumDistance(a, b, out Vector3 closestA, out Vector3 closestB);
 
-            Assert.True(double.IsFinite(distance), $"iteration {iteration}: distance is not finite");
-            Assert.True(float.IsFinite(closestA.X) && float.IsFinite(closestA.Y) && float.IsFinite(closestA.Z),
+            Assert.True(IsFinite(distance), $"iteration {iteration}: distance is not finite");
+            Assert.True(IsFinite(closestA.X) && IsFinite(closestA.Y) && IsFinite(closestA.Z),
                 $"iteration {iteration}: closestA is not finite");
-            Assert.True(float.IsFinite(closestB.X) && float.IsFinite(closestB.Y) && float.IsFinite(closestB.Z),
+            Assert.True(IsFinite(closestB.X) && IsFinite(closestB.Y) && IsFinite(closestB.Z),
                 $"iteration {iteration}: closestB is not finite");
             Assert.Equal(distance, (closestB - closestA).Length(), 3);
         }
@@ -639,4 +639,9 @@ public class OpenGjkSharpTests
         NumPoints = points.Length,
         Coord = [.. points.Select(p => (double[])[p.X, p.Y, p.Z])],
     };
+
+    // double.IsFinite/float.IsFinite are unavailable on net48
+    private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
+    private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
 }

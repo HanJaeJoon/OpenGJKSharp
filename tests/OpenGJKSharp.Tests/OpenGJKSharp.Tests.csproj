@@ -2,6 +2,9 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <!-- Windows에서는 net48로도 테스트해 netstandard2.0 어셈블리를 .NET Framework에서 검증 -->
+    <TargetFrameworks Condition="'$(OS)' == 'Windows_NT'">net8.0;net10.0;net48</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
