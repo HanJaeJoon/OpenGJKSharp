@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `netstandard2.1` target: the package can now be used from .NET Core 3.0+, Unity 2021.2+, and Mono in addition to .NET 8
+- `net10.0` target for the current LTS runtime; tests now run on both .NET 8 and .NET 10
 - SourceLink and symbol package (`.snupkg`) for source-level debugging
 
 ### Changed
