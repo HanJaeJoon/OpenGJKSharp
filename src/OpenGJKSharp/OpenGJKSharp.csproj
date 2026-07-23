@@ -5,7 +5,7 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Authors>HanJaeJoon</Authors>
     <Description>A library of GJK algorithms implemented in C#. Designed based on the original openGJK.</Description>
