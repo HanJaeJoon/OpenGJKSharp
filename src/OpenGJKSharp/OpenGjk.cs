@@ -745,7 +745,8 @@ public static class OpenGjk
             return false;
         }
 
-        depth = -collisionInformation;
+        // Exactly touching reports 0, and negating it would hand back -0.
+        depth = collisionInformation < 0 ? -collisionInformation : 0;
         return true;
     }
 
@@ -1023,15 +1024,35 @@ public static class OpenGjk
         bd1.InitSupport();
         bd2.InitSupport();
 
-        // Initialize search direction
+        // Initialize search direction from the two interior points
         v[0] = bd1.S[0] - bd2.S[0];
         v[1] = bd1.S[1] - bd2.S[1];
         v[2] = bd1.S[2] - bd2.S[2];
 
-        // Initialize simplex
+        if (Norm2(v) < eps_rel2)
+        {
+            // The interior points coincide (concentric bodies), so they say nothing about
+            // where to look. Any direction works as a start.
+            v[0] = 1;
+            v[1] = 0;
+            v[2] = 0;
+        }
+
+        // Initialize the simplex with the first support point along that direction. The
+        // interior points must not become simplex vertices themselves: EPA later builds its
+        // polytope out of these vertices and needs boundary points, or it inherits a face
+        // through the origin - which is exactly what an interior vertex produces - and its
+        // closest-face search stalls at distance zero.
+        vMinus[0] = -v[0];
+        vMinus[1] = -v[1];
+        vMinus[2] = -v[2];
+        bd1.Support(vMinus);
+        bd2.Support(v);
+
         s.NVrtx = 1;
         for (int t = 0; t < 3; ++t)
         {
+            v[t] = bd1.S[t] - bd2.S[t];
             s.Vrtx[0, t] = v[t];
         }
         s.VrtxIdx[0, 0] = bd1.SIdx;

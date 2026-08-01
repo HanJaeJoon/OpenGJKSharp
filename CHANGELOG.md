@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Penetration depth is now reported for bodies whose interior points coincide - concentric
+  bodies, one body containing another, or two long bodies crossing at their common center.
+  GJK seeded its simplex with the difference of the two `GetCenter` results, an interior point
+  of the Minkowski difference (the origin itself when the centers match); EPA inherited it as
+  a polytope vertex, which puts a face through the origin and stalls the closest-face search
+  at distance zero. The simplex now starts from a support point along that direction instead,
+  as the algorithm intends. Crossed capsules of radius 1 reported a depth of 0 (0.5.0) and are
+  now exact; separated queries also got slightly faster.
 - EPA no longer underestimates the penetration depth of deeply overlapping curved shapes.
   A polytope face is a lower bound on the depth and can never resolve a curved surface, which
   cost up to 5.6% (two concentric unit spheres reported 1.888 instead of 2.0); the depth is

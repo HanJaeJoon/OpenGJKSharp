@@ -37,6 +37,10 @@ public class TryGetPenetrationTests
 
         Assert.True(OpenGjk.TryGetPenetration(a, b, out double depth, out _));
         Assert.Equal(0.0, depth, 6);
+
+        // Positive zero, not negative zero: the latter formats as "-0" and flips the sign of
+        // anything divided by it.
+        Assert.False(double.IsNegative(depth));
     }
 
     [Fact]
