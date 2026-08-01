@@ -660,6 +660,95 @@ public static class OpenGjk
         return distance;
     }
 
+    /// <summary>
+    /// Determines whether two support-mapped convex shapes collide and, if so, by how much.
+    /// </summary>
+    /// <param name="a">The first shape.</param>
+    /// <param name="b">The second shape.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the shapes are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first shape toward the second.</param>
+    /// <returns><c>true</c> when the shapes overlap or touch exactly.</returns>
+    /// <remarks>
+    /// The same query as <see cref="ComputeCollisionInformation(ISupportMappable, ISupportMappable, out Vector3)"/>,
+    /// reported without a sign convention to interpret: move the second shape by
+    /// <paramref name="depth"/> along <paramref name="contactNormal"/> (or the first against it)
+    /// to separate the pair. When the shapes are apart the normal still points from the first
+    /// toward the second, so it can be used as a separation direction.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="a"/> or <paramref name="b"/> is null.</exception>
+    public static bool TryGetPenetration(ISupportMappable a, ISupportMappable b, out double depth, out Vector3 contactNormal)
+    {
+        return TryGetPenetration(a, b, new GjkWorkspace(), out depth, out contactNormal);
+    }
+
+    /// <summary>
+    /// Determines whether two support-mapped convex shapes collide and, if so, by how much,
+    /// reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// </summary>
+    /// <param name="a">The first shape.</param>
+    /// <param name="b">The second shape.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the shapes are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first shape toward the second.</param>
+    /// <returns><c>true</c> when the shapes overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentNullException"><paramref name="a"/>, <paramref name="b"/> or <paramref name="workspace"/> is null.</exception>
+    public static bool TryGetPenetration(ISupportMappable a, ISupportMappable b, GjkWorkspace workspace,
+        out double depth, out Vector3 contactNormal)
+    {
+        double info = ComputeCollisionInformation(a, b, workspace, out contactNormal);
+
+        return ToPenetration(info, out depth);
+    }
+
+    /// <summary>
+    /// Determines whether two convex polytopes collide and, if so, by how much.
+    /// </summary>
+    /// <param name="a">Vertices of the first body.</param>
+    /// <param name="b">Vertices of the second body.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the bodies are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first body toward the second.</param>
+    /// <returns><c>true</c> when the bodies overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3)" path="/remarks"/>
+    public static bool TryGetPenetration(Vector3[] a, Vector3[] b, out double depth, out Vector3 contactNormal)
+    {
+        return TryGetPenetration(a, b, new GjkWorkspace(), out depth, out contactNormal);
+    }
+
+    /// <summary>
+    /// Determines whether two convex polytopes collide and, if so, by how much,
+    /// reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// </summary>
+    /// <param name="a">Vertices of the first body.</param>
+    /// <param name="b">Vertices of the second body.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the bodies are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first body toward the second.</param>
+    /// <returns><c>true</c> when the bodies overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    public static bool TryGetPenetration(Vector3[] a, Vector3[] b, GjkWorkspace workspace,
+        out double depth, out Vector3 contactNormal)
+    {
+        double info = ComputeCollisionInformation(a, b, workspace, out contactNormal);
+
+        return ToPenetration(info, out depth);
+    }
+
+    // Collision information is signed - negative depth on collision, positive separation
+    // distance otherwise - which is exactly the convention that is easy to get backwards.
+    private static bool ToPenetration(double collisionInformation, out double depth)
+    {
+        if (collisionInformation > 0)
+        {
+            depth = 0;
+            return false;
+        }
+
+        depth = -collisionInformation;
+        return true;
+    }
+
     private static void ValidateShapes(ISupportMappable a, ISupportMappable b)
     {
         if (a is null)

@@ -92,6 +92,17 @@ else
 }
 ```
 
+For depenetration, `TryGetPenetration` reports the same result without a sign convention to
+get backwards - the depth is always positive and the normal always points from the first body
+toward the second:
+
+``` c#
+if (OpenGjk.TryGetPenetration(body, ground, out double depth, out Vector3 normal))
+{
+    position -= normal * (float)depth;   // move the first body out of the second
+}
+```
+
 For exactly concentric bodies every direction is a valid minimum translation, so the
 returned normal direction is arbitrary (still unit length).
 
