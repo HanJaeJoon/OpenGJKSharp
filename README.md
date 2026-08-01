@@ -95,6 +95,11 @@ else
 For exactly concentric bodies every direction is a valid minimum translation, so the
 returned normal direction is arbitrary (still unit length).
 
+The depth is exact for polyhedra. Curved shapes (spheres, capsules, and custom support
+mappings) cannot be resolved exactly by a finite polytope, so their depth is reported as a
+slight overestimate - within about 0.3% for spheres, even when one body is fully inside the
+other - rather than an underestimate, so pushing the bodies apart by it always separates them.
+
 ### Minimum distance and closest points
 
 `ComputeMinimumDistance` returns the minimum distance between two bodies

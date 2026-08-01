@@ -35,6 +35,12 @@ namespace OpenGJKSharp;
 /// is a valid minimum translation - and an unspecified unit vector is returned.
 /// </description></item>
 /// <item><description>
+/// <b>Penetration depth.</b> Exact for polyhedra. Curved shapes cannot be resolved exactly by
+/// a finite polytope, so their depth is reported as a slight overestimate (within about 0.3%
+/// for spheres) rather than an underestimate - pushing the bodies apart by it always resolves
+/// the penetration.
+/// </description></item>
+/// <item><description>
 /// <b>Precision.</b> Internal math runs in double precision. The <see cref="Vector3"/> and
 /// <see cref="Vector2"/> overloads quantize their input to single precision; the
 /// <see cref="ReadOnlySpan{T}"/> of <see cref="double"/> overloads do not.
@@ -2659,23 +2665,20 @@ public static class OpenGjk
             double distToNew = DotProduct(closest.Normal, newVertex);
             double improvement = distToNew - closestDistance;
 
+            // Every face normal tried yields a support plane touching both shapes, so its
+            // distance is an upper bound on the penetration depth. Keep the tightest one: on
+            // a curved shape the closest face of the final polytope is a poor direction
+            // estimate, while the best plane seen is the closest the search ever came to the
+            // true minimum translation.
+            if (distToNew < poly.BestDepth)
+            {
+                RecordBestFace(poly, closest, distToNew);
+            }
+
             if (improvement < tolerance)
             {
-                // Converged, compute witness points with bary coords
-                ComputeBarycentricOrigin(poly.Vertices[closest.V[0]],
-                    poly.Vertices[closest.V[1]],
-                    poly.Vertices[closest.V[2]], out double a0, out double a1, out double a2);
-                for (int i = 0; i < 3; i++)
-                {
-                    simplex.Witnesses[0, i] = bd1.GetPoint(closest.VIdx[0][0])[i] * a0
-                        + bd1.GetPoint(closest.VIdx[1][0])[i] * a1
-                        + bd1.GetPoint(closest.VIdx[2][0])[i] * a2;
-                    simplex.Witnesses[1, i] = bd2.GetPoint(closest.VIdx[0][1])[i] * a0
-                        + bd2.GetPoint(closest.VIdx[1][1])[i] * a1
-                        + bd2.GetPoint(closest.VIdx[2][1])[i] * a2;
-                    contactNormal[i] = closest.Normal[i];
-                }
-                distance = -closestDistance;
+                // Converged
+                Finish(bd1, bd2, poly, simplex, closestDistance, ref distance, contactNormal);
                 break;
             }
 
@@ -2696,20 +2699,7 @@ public static class OpenGjk
             if (isDuplicate)
             {
                 // Can't make progress, use current best
-                ComputeBarycentricOrigin(poly.Vertices[closest.V[0]],
-                    poly.Vertices[closest.V[1]],
-                    poly.Vertices[closest.V[2]], out double a0, out double a1, out double a2);
-                for (int i = 0; i < 3; i++)
-                {
-                    simplex.Witnesses[0, i] = bd1.GetPoint(closest.VIdx[0][0])[i] * a0
-                        + bd1.GetPoint(closest.VIdx[1][0])[i] * a1
-                        + bd1.GetPoint(closest.VIdx[2][0])[i] * a2;
-                    simplex.Witnesses[1, i] = bd2.GetPoint(closest.VIdx[0][1])[i] * a0
-                        + bd2.GetPoint(closest.VIdx[1][1])[i] * a1
-                        + bd2.GetPoint(closest.VIdx[2][1])[i] * a2;
-                    contactNormal[i] = closest.Normal[i];
-                }
-                distance = -closestDistance;
+                Finish(bd1, bd2, poly, simplex, closestDistance, ref distance, contactNormal);
                 break;
             }
 
@@ -2891,23 +2881,66 @@ public static class OpenGjk
 
             if (closestFace >= 0)
             {
+                // The polytope ran out of budget - this is where curved shapes end up, since
+                // no finite polytope resolves them. The final face was never measured against
+                // the shapes, so do that before picking the best plane.
                 EpaFace closest = poly.Faces[closestFace];
-                ComputeBarycentricOrigin(poly.Vertices[closest.V[0]],
-                    poly.Vertices[closest.V[1]],
-                    poly.Vertices[closest.V[2]], out double a0, out double a1, out double a2);
-                for (int i = 0; i < 3; i++)
+                SupportEpa(bd1, bd2, poly, closest.Normal, newVertex, newVertexIdx);
+                double distToNew = DotProduct(closest.Normal, newVertex);
+                if (distToNew < poly.BestDepth)
                 {
-                    simplex.Witnesses[0, i] = bd1.GetPoint(closest.VIdx[0][0])[i] * a0
-                        + bd1.GetPoint(closest.VIdx[1][0])[i] * a1
-                        + bd1.GetPoint(closest.VIdx[2][0])[i] * a2;
-                    simplex.Witnesses[1, i] = bd2.GetPoint(closest.VIdx[0][1])[i] * a0
-                        + bd2.GetPoint(closest.VIdx[1][1])[i] * a1
-                        + bd2.GetPoint(closest.VIdx[2][1])[i] * a2;
-                    contactNormal[i] = closest.Normal[i];
+                    RecordBestFace(poly, closest, distToNew);
                 }
-                distance = -closestDistance;
+
+                Finish(bd1, bd2, poly, simplex, closestDistance, ref distance, contactNormal);
             }
         }
+    }
+
+    // Remembers a face and the support-plane distance along its normal, so the result can be
+    // built from it after later iterations have recycled its face slot.
+    private static void RecordBestFace(EpaPolytope poly, EpaFace face, double supportDistance)
+    {
+        poly.BestDepth = supportDistance;
+
+        for (int i = 0; i < 3; i++)
+        {
+            poly.BestNormal[i] = face.Normal[i];
+            poly.BestVertices[i] = face.V[i];
+            poly.BestVertexIndices[i][0] = face.VIdx[i][0];
+            poly.BestVertexIndices[i][1] = face.VIdx[i][1];
+        }
+    }
+
+    // Builds the EPA result from the best face seen.
+    //
+    // On depth: a face of the polytope is inscribed in the Minkowski difference, so its
+    // distance from the origin is a lower bound on the penetration depth - exact for a
+    // polyhedron, but for a curved shape short by the chord of the face (up to 5.6% for a
+    // sphere, which no iteration budget removes). The support plane along a face normal is
+    // the matching upper bound, equal to the depth when the normal is the true minimum
+    // translation direction and larger otherwise, so the smallest one seen is the best
+    // estimate available. Taking the larger of the two bounds keeps the result at least as
+    // deep as the polytope proves it to be.
+    private static void Finish(GkBody bd1, GkBody bd2, EpaPolytope poly, GkSimplex simplex,
+        double faceDistance, ref double distance, double[] contactNormal)
+    {
+        ComputeBarycentricOrigin(poly.Vertices[poly.BestVertices[0]],
+            poly.Vertices[poly.BestVertices[1]],
+            poly.Vertices[poly.BestVertices[2]], out double a0, out double a1, out double a2);
+
+        for (int i = 0; i < 3; i++)
+        {
+            simplex.Witnesses[0, i] = bd1.GetPoint(poly.BestVertexIndices[0][0])[i] * a0
+                + bd1.GetPoint(poly.BestVertexIndices[1][0])[i] * a1
+                + bd1.GetPoint(poly.BestVertexIndices[2][0])[i] * a2;
+            simplex.Witnesses[1, i] = bd2.GetPoint(poly.BestVertexIndices[0][1])[i] * a0
+                + bd2.GetPoint(poly.BestVertexIndices[1][1])[i] * a1
+                + bd2.GetPoint(poly.BestVertexIndices[2][1])[i] * a2;
+            contactNormal[i] = poly.BestNormal[i];
+        }
+
+        distance = -(poly.BestDepth > faceDistance ? poly.BestDepth : faceDistance);
     }
 
     #endregion

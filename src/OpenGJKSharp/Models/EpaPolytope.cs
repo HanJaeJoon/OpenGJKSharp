@@ -56,6 +56,21 @@ internal sealed class EpaPolytope
     /// <summary>Negated search direction, filled by the EPA support helper.</summary>
     public double[] NegDirection { get; } = new double[3];
 
+    /// <summary>
+    /// Tightest penetration depth seen so far, that is the smallest support-plane distance
+    /// over all face normals tried. <see cref="double.MaxValue"/> while nothing has been tried.
+    /// </summary>
+    public double BestDepth { get; set; }
+
+    /// <summary>Face normal that produced <see cref="BestDepth"/>.</summary>
+    public double[] BestNormal { get; } = new double[3];
+
+    /// <summary>Polytope vertices of that face, kept because face slots get recycled.</summary>
+    public int[] BestVertices { get; } = new int[3];
+
+    /// <summary>Body point ids of that face's vertices [vertex][body].</summary>
+    public int[][] BestVertexIndices { get; } = [new int[2], new int[2], new int[2]];
+
     /// <summary>Search direction used while a degenerate GJK simplex is grown to a tetrahedron.</summary>
     public double[] Direction { get; } = new double[3];
 
@@ -89,6 +104,7 @@ internal sealed class EpaPolytope
     {
         NumVertices = 0;
         MaxFaceIndex = 0;
+        BestDepth = double.MaxValue;
 
         for (int i = 0; i < MaxEpaFaces; i++)
         {

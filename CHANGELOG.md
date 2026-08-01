@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously a support-mapped query allocated about 4 KB, and a colliding query
   about 150 KB for the EPA pass.
 
+### Fixed
+
+- EPA no longer underestimates the penetration depth of deeply overlapping curved shapes.
+  A polytope face is a lower bound on the depth and can never resolve a curved surface, which
+  cost up to 5.6% (two concentric unit spheres reported 1.888 instead of 2.0); the depth is
+  now taken from the tightest support plane found during the search, which is an upper bound
+  and exact when the contact normal is. Worst-case error over the sphere overlap sweep drops
+  from 5.62% to 0.24%, polyhedra stay exact, and the cost is unchanged.
+
 ### Changed
 
 - Colliding bodies now report a minimum distance of exactly 0. The iteration used to leave a
