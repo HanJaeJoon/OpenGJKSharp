@@ -80,7 +80,9 @@ double distance = OpenGjk.ComputeCollisionInformation(a, b, out Vector3 contactN
 
 if (distance < 0)
 {
-    // Colliding: -distance is the penetration depth, contactNormal is the contact normal
+    // Colliding: -distance is the penetration depth, and contactNormal is a unit vector
+    // pointing from the first body toward the second - move b along it (or a against it)
+    // by the depth to separate them.
     Console.WriteLine($"Penetration depth: {-distance}, normal: {contactNormal}");
 }
 else
@@ -89,6 +91,9 @@ else
     Console.WriteLine($"Distance: {distance}");
 }
 ```
+
+For exactly concentric bodies every direction is a valid minimum translation, so the
+returned normal direction is arbitrary (still unit length).
 
 ### Minimum distance and closest points
 
@@ -101,6 +106,11 @@ double distance = OpenGjk.ComputeMinimumDistance(a, b, out Vector3 closestA, out
 Console.WriteLine($"Distance: {distance}");
 Console.WriteLine($"Closest points: {closestA} <-> {closestB}");
 ```
+
+The closest points are only meaningful while the bodies are separated, where they lie on
+the respective surfaces. Once the bodies overlap there is no closest pair: the distance is
+0 and both witness points collapse onto a common point inside the intersection, which is
+not on either surface. Use `ComputeCollisionInformation` for that case.
 
 `HasCollision` and `ComputeMinimumDistance` also accept `Vector2[]` polygons
 (treated as flat shapes on the z = 0 plane).

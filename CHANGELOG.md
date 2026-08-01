@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Colliding bodies now report a minimum distance of exactly 0. The iteration used to leave a
+  residual (about 1e-16 at unit scale, larger for bigger bodies), so `distance == 0` missed
+  collisions; the residual is now measured against the size of the bodies and flushed to zero.
+- Documented the result contract that dogfooding found missing: the direction passed to
+  `GetSupportPoint` is never zero but its length is unspecified; `GetCenter` must return an
+  interior point and only affects convergence speed; witness points are meaningless while the
+  bodies overlap (both collapse to a common interior point); the contact normal points from
+  the first body toward the second and is arbitrary for concentric bodies.
 - **Breaking:** `GkPolytope` and `GkSimplex` are now `internal`, along with the
   `OpenGjk` overloads that took them. They exposed internal algorithm state
   (an undocumented `double[][]` coordinate layout and settable counters that could

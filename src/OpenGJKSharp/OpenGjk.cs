@@ -8,6 +8,39 @@ namespace OpenGJKSharp;
 /// GJK (Gilbert-Johnson-Keerthi) collision detection between convex polytopes,
 /// with EPA (Expanding Polytope Algorithm) support for penetration depth.
 /// </summary>
+/// <remarks>
+/// <para>
+/// The following holds for every query, whatever the input kind (vertex arrays, 2D polygons,
+/// double-precision coordinates, or <see cref="ISupportMappable"/> shapes):
+/// </para>
+/// <list type="bullet">
+/// <item><description>
+/// <b>Distance on collision.</b> Colliding bodies report a distance of exactly 0: the
+/// residual left by the iteration is measured against the size of the bodies and flushed to
+/// zero. What remains is input quantization - with the <see cref="Vector3"/> overloads at
+/// large coordinates, a pair meant to touch exactly may end up slightly separated or slightly
+/// overlapping once the coordinates are rounded to single precision.
+/// </description></item>
+/// <item><description>
+/// <b>Witness points on collision.</b> The closest points are only meaningful while the
+/// bodies are separated, where they lie on the respective surfaces. Once the bodies overlap
+/// there is no closest pair: both witness points collapse onto a common point inside the
+/// intersection, which is not on either surface. Use <c>ComputeCollisionInformation</c> for
+/// penetration depth and contact normal instead.
+/// </description></item>
+/// <item><description>
+/// <b>Contact normal.</b> It is a unit vector pointing from the first body toward the second,
+/// so pushing the second body along it (or the first against it) resolves the penetration.
+/// For exactly concentric bodies the direction is mathematically arbitrary - every direction
+/// is a valid minimum translation - and an unspecified unit vector is returned.
+/// </description></item>
+/// <item><description>
+/// <b>Precision.</b> Internal math runs in double precision. The <see cref="Vector3"/> and
+/// <see cref="Vector2"/> overloads quantize their input to single precision; the
+/// <see cref="ReadOnlySpan{T}"/> of <see cref="double"/> overloads do not.
+/// </description></item>
+/// </list>
+/// </remarks>
 public static class OpenGjk
 {
     private const double _gkEpsilon = 2.2204460492503131e-16; // DBL_EPSILON
@@ -978,7 +1011,27 @@ public static class OpenGjk
         }
 
         ComputeWitnesses(bd1, bd2, s);
-        return Math.Sqrt(Norm2(v));
+
+        // Overlapping bodies leave the search direction at the origin up to rounding, so the
+        // raw result is noise (about 1e-16 at unit scale) rather than the documented 0. The
+        // noise floor grows with the coordinates, so it is measured against the size of the
+        // simplex - the same relative criterion the loop above terminates on.
+        double norm2 = Norm2(v);
+        for (int jj = 0; jj < s.NVrtx; jj++)
+        {
+            double vertexNorm = Norm2(s.Vrtx[jj, 0], s.Vrtx[jj, 1], s.Vrtx[jj, 2]);
+            if (vertexNorm > norm2WMax)
+            {
+                norm2WMax = vertexNorm;
+            }
+        }
+
+        if (norm2 <= eps_tot * eps_tot * norm2WMax || norm2 <= _gkEpsilon * _gkEpsilon)
+        {
+            return 0;
+        }
+
+        return Math.Sqrt(norm2);
     }
 
     private static double DotProduct(double[] a, double[] b)
