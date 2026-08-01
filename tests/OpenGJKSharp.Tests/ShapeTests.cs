@@ -90,7 +90,8 @@ public class ShapeTests
     public void Should_ReturnRotatedCorner_When_RotatedBoxSupportIsQueried()
     {
         // 90 degrees about +Z maps local +X to world +Y.
-        var orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2);
+        // (float)Math.PI instead of MathF.PI: MathF is unavailable on net48.
+        var orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, (float)Math.PI / 2);
         var box = new Box(new Vector3(10, 0, 0), new Vector3(1, 2, 3), orientation);
 
         // Local direction = inverse-rotated (1, 0.2, 0.5) = (0.2, -1, 0.5)
