@@ -282,6 +282,185 @@ public static class OpenGjk
     }
 
     /// <summary>
+    /// Determines whether two convex polytopes given in double precision collide.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="precision">Distance below which the bodies are considered colliding. Must not be negative.</param>
+    /// <returns><c>true</c> when the minimum distance is within <paramref name="precision"/>.</returns>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, or a coordinate is not finite.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="precision"/> is negative.</exception>
+    public static bool HasCollision(ReadOnlySpan<double> a, ReadOnlySpan<double> b, double precision = _precision)
+    {
+        return HasCollision(a, b, new GjkWorkspace(), precision);
+    }
+
+    /// <summary>
+    /// Determines whether two convex polytopes given in double precision collide,
+    /// reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="precision">Distance below which the bodies are considered colliding. Must not be negative.</param>
+    /// <returns><c>true</c> when the minimum distance is within <paramref name="precision"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, or a coordinate is not finite.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="precision"/> is negative.</exception>
+    public static bool HasCollision(ReadOnlySpan<double> a, ReadOnlySpan<double> b, GjkWorkspace workspace, double precision = _precision)
+    {
+        ValidateCoordinates(a, b);
+        ValidateWorkspace(workspace);
+        ValidatePrecision(precision);
+
+        LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
+        double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+
+        return distance <= precision;
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two convex polytopes given in double precision.
+    /// Returns 0 when the bodies collide.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <returns>The minimum distance between the two bodies.</returns>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, or a coordinate is not finite.</exception>
+    public static double ComputeMinimumDistance(ReadOnlySpan<double> a, ReadOnlySpan<double> b)
+    {
+        return ComputeMinimumDistance(a, b, new GjkWorkspace());
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two convex polytopes given in double precision,
+    /// reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// Returns 0 when the bodies collide.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <returns>The minimum distance between the two bodies.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, or a coordinate is not finite.</exception>
+    public static double ComputeMinimumDistance(ReadOnlySpan<double> a, ReadOnlySpan<double> b, GjkWorkspace workspace)
+    {
+        ValidateCoordinates(a, b);
+        ValidateWorkspace(workspace);
+
+        LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
+
+        return ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two convex polytopes given in double precision,
+    /// along with the closest point on each body (witness points).
+    /// Returns 0 when the bodies collide.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="closestA">Receives the closest point on the first body. Must hold at least 3 elements.</param>
+    /// <param name="closestB">Receives the closest point on the second body. Must hold at least 3 elements.</param>
+    /// <returns>The minimum distance between the two bodies.</returns>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, a coordinate is not finite,
+    /// or an output span is shorter than 3 elements.</exception>
+    public static double ComputeMinimumDistance(ReadOnlySpan<double> a, ReadOnlySpan<double> b,
+        Span<double> closestA, Span<double> closestB)
+    {
+        return ComputeMinimumDistance(a, b, new GjkWorkspace(), closestA, closestB);
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two convex polytopes given in double precision,
+    /// along with the closest point on each body (witness points),
+    /// reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// Returns 0 when the bodies collide.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="closestA">Receives the closest point on the first body. Must hold at least 3 elements.</param>
+    /// <param name="closestB">Receives the closest point on the second body. Must hold at least 3 elements.</param>
+    /// <returns>The minimum distance between the two bodies.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, a coordinate is not finite,
+    /// or an output span is shorter than 3 elements.</exception>
+    public static double ComputeMinimumDistance(ReadOnlySpan<double> a, ReadOnlySpan<double> b,
+        GjkWorkspace workspace, Span<double> closestA, Span<double> closestB)
+    {
+        ValidateCoordinates(a, b);
+        ValidateWorkspace(workspace);
+        ValidateOutput(closestA, nameof(closestA));
+        ValidateOutput(closestB, nameof(closestB));
+
+        LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
+        GkSimplex simplex = workspace.Simplex;
+        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+
+        for (int t = 0; t < 3; t++)
+        {
+            closestA[t] = simplex.Witnesses[0, t];
+            closestB[t] = simplex.Witnesses[1, t];
+        }
+
+        return distance;
+    }
+
+    /// <summary>
+    /// Computes collision information between two convex polytopes given in double precision.
+    /// Returns the minimum distance when the bodies are separated (positive value),
+    /// or the penetration depth computed by the EPA algorithm when they collide (negative value).
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="contactNormal">Receives the contact normal, pointing from the first body toward the second. Must hold at least 3 elements.</param>
+    /// <returns>Positive separation distance, or negative penetration depth on collision.</returns>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, a coordinate is not finite,
+    /// or <paramref name="contactNormal"/> is shorter than 3 elements.</exception>
+    public static double ComputeCollisionInformation(ReadOnlySpan<double> a, ReadOnlySpan<double> b, Span<double> contactNormal)
+    {
+        return ComputeCollisionInformation(a, b, new GjkWorkspace(), contactNormal);
+    }
+
+    /// <summary>
+    /// Computes collision information between two convex polytopes given in double precision,
+    /// reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// Returns the minimum distance when the bodies are separated (positive value),
+    /// or the penetration depth computed by the EPA algorithm when they collide (negative value).
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="contactNormal">Receives the contact normal, pointing from the first body toward the second. Must hold at least 3 elements.</param>
+    /// <returns>Positive separation distance, or negative penetration depth on collision.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, a coordinate is not finite,
+    /// or <paramref name="contactNormal"/> is shorter than 3 elements.</exception>
+    public static double ComputeCollisionInformation(ReadOnlySpan<double> a, ReadOnlySpan<double> b,
+        GjkWorkspace workspace, Span<double> contactNormal)
+    {
+        ValidateCoordinates(a, b);
+        ValidateWorkspace(workspace);
+        ValidateOutput(contactNormal, nameof(contactNormal));
+
+        LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
+        GkSimplex simplex = workspace.Simplex;
+
+        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+
+        double[] normal = workspace.ContactNormal;
+        ComputeCollisionInformation(bd1, bd2, simplex, workspace.Epa, ref distance, normal);
+
+        for (int t = 0; t < 3; t++)
+        {
+            contactNormal[t] = normal[t];
+        }
+
+        return distance;
+    }
+
+    /// <summary>
     /// Determines whether two support-mapped convex shapes collide.
     /// </summary>
     /// <param name="a">The first shape.</param>
@@ -561,6 +740,55 @@ public static class OpenGjk
         }
     }
 
+    private static void ValidateCoordinates(ReadOnlySpan<double> a, ReadOnlySpan<double> b)
+    {
+        ValidateCoordinates(a, nameof(a));
+        ValidateCoordinates(b, nameof(b));
+    }
+
+    private static void ValidateCoordinates(ReadOnlySpan<double> coordinates, string paramName)
+    {
+        if (coordinates.Length == 0)
+        {
+            throw new ArgumentException("At least one vertex is required.", paramName);
+        }
+
+        if (coordinates.Length % 3 != 0)
+        {
+            throw new ArgumentException(
+                $"Length must be a multiple of 3 (consecutive x, y, z triples), but was {coordinates.Length}.",
+                paramName);
+        }
+
+        for (int i = 0; i < coordinates.Length; i++)
+        {
+            if (double.IsNaN(coordinates[i]) || double.IsInfinity(coordinates[i]))
+            {
+                throw new ArgumentException(
+                    $"Coordinate at index {i} is not finite: {coordinates[i]}.",
+                    paramName);
+            }
+        }
+    }
+
+    private static void ValidateOutput(Span<double> destination, string paramName)
+    {
+        if (destination.Length < 3)
+        {
+            throw new ArgumentException(
+                $"Must hold at least 3 elements (x, y, z), but holds {destination.Length}.",
+                paramName);
+        }
+    }
+
+    private static void LoadCoordinates(GjkWorkspace workspace, ReadOnlySpan<double> a, ReadOnlySpan<double> b,
+        out GkBody bd1, out GkBody bd2)
+    {
+        workspace.PolytopeA.Load(a);
+        workspace.PolytopeB.Load(b);
+        workspace.LoadPolytopes(out bd1, out bd2);
+    }
+
     private static void LoadVertices(GjkWorkspace workspace, Vector3[] a, Vector3[] b, out GkBody bd1, out GkBody bd2)
     {
         workspace.PolytopeA.Load(a);
@@ -586,7 +814,7 @@ public static class OpenGjk
     /// <param name="nCoordsB">Number of points of the second body.</param>
     /// <param name="inCoordsB">Coordinates of the second body as a [3, n] array (x/y/z rows).</param>
     /// <returns>The minimum distance between the two bodies.</returns>
-    [Obsolete("Use ComputeMinimumDistance(Vector3[], Vector3[]) instead, or the GjkWorkspace overload to avoid per-query allocation. Note that the public contract is single precision: convert double coordinates to Vector3 yourself.")]
+    [Obsolete("Use ComputeMinimumDistance(ReadOnlySpan<double>, ReadOnlySpan<double>) for double precision input (coordinates as consecutive x, y, z triples instead of a [3, n] array), or ComputeMinimumDistance(Vector3[], Vector3[]). Add the GjkWorkspace overload to avoid per-query allocation.")]
     public static double CsFunction(int nCoordsA, double[,] inCoordsA, int nCoordsB, double[,] inCoordsB)
     {
         double[][] pinCoordsA = new double[nCoordsA][];

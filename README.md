@@ -105,6 +105,27 @@ Console.WriteLine($"Closest points: {closestA} <-> {closestB}");
 `HasCollision` and `ComputeMinimumDistance` also accept `Vector2[]` polygons
 (treated as flat shapes on the z = 0 plane).
 
+### Double-precision input
+
+`Vector3` is single precision, so vertex coordinates are quantized on input - at a
+coordinate of 1e6 the spacing of `float` is about 6e-2, and smaller gaps are lost.
+Internal math always runs in double precision, and every query also accepts coordinates
+as a `ReadOnlySpan<double>` of consecutive (x, y, z) triples when the input itself needs
+that range:
+
+``` c#
+double[] a = [1e6, 0, 0];
+double[] b = [1e6 + 1e-3, 0, 0];
+
+double distance = OpenGjk.ComputeMinimumDistance(a, b);   // 0.001, not 0
+
+Span<double> normal = stackalloc double[3];
+double info = OpenGjk.ComputeCollisionInformation(a, b, normal);
+```
+
+These overloads replace the legacy `CsFunction` (the obsolete openGJK C interface,
+which took a `[3, n]` array); they are the same algorithm with a fuller result set.
+
 ### Reusing buffers in a query loop (`GjkWorkspace`)
 
 Every query needs working buffers (simplex, support points, EPA polytope). The overloads

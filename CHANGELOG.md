@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Double-precision query overloads taking coordinates as a `ReadOnlySpan<double>` of
+  consecutive (x, y, z) triples (`HasCollision`, `ComputeMinimumDistance` with and without
+  witness points, `ComputeCollisionInformation`, each with a `GjkWorkspace` variant).
+  The obsolete `CsFunction` used to be the only double-precision entry point; these
+  overloads replace it with the full result set. Adds a `System.Memory` dependency
+  on `netstandard2.0` only.
 - `TransformedShape`: places any `ISupportMappable` at a pose (rotation + translation),
   so a shape can be defined once in local space and moved with `SetPose` instead of being
   rebuilt every frame. Previously only `Box` accepted an orientation, and moving a

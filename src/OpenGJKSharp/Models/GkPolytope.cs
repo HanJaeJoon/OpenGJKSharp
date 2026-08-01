@@ -68,6 +68,26 @@ internal sealed class GkPolytope
         NumPoints = points.Length;
     }
 
+    /// <summary>
+    /// Fills this polytope from consecutive (x, y, z) coordinate triples, keeping full
+    /// double precision (the <see cref="Vector3"/> overloads quantize to single precision).
+    /// </summary>
+    public void Load(ReadOnlySpan<double> coordinates)
+    {
+        int count = coordinates.Length / 3;
+        EnsureCapacity(count);
+
+        for (int i = 0; i < count; i++)
+        {
+            double[] point = Coord[i];
+            point[0] = coordinates[i * 3];
+            point[1] = coordinates[(i * 3) + 1];
+            point[2] = coordinates[(i * 3) + 2];
+        }
+
+        NumPoints = count;
+    }
+
     private void EnsureCapacity(int count)
     {
         if (Coord.Length < count)
