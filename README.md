@@ -105,6 +105,28 @@ Console.WriteLine($"Closest points: {closestA} <-> {closestB}");
 `HasCollision` and `ComputeMinimumDistance` also accept `Vector2[]` polygons
 (treated as flat shapes on the z = 0 plane).
 
+### Reusing buffers in a query loop (`GjkWorkspace`)
+
+Every query needs working buffers (simplex, support points, EPA polytope). The overloads
+shown above allocate them per call, which is fine occasionally but becomes steady garbage
+in a physics loop. Pass a `GjkWorkspace` to reuse the buffers instead - after the first few
+queries have grown them, further queries of the same kind allocate nothing:
+
+``` c#
+var workspace = new GjkWorkspace();
+
+foreach (var (a, b) in pairs)
+{
+    double distance = OpenGjk.ComputeMinimumDistance(a, b, workspace);
+    double info = OpenGjk.ComputeCollisionInformation(a, b, workspace, out Vector3 normal);
+}
+```
+
+Every `HasCollision`, `ComputeMinimumDistance`, and `ComputeCollisionInformation` overload
+has a workspace counterpart, for vertex arrays, 2D polygons, and `ISupportMappable` shapes
+alike. A workspace holds no result state, so it can be reused as soon as a query returns.
+It is **not thread-safe**: use one workspace per thread.
+
 ### Shapes and custom support functions
 
 GJK is a support-function-based algorithm, so shapes like spheres and capsules can be

@@ -36,6 +36,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 내부 GJK/EPA 자료구조(GkPolytope 등)를 테스트에서 직접 검증하기 위함 -->
+    <InternalsVisibleTo Include="OpenGJKSharp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\example.png" Pack="true" PackagePath="\" />
     <None Include="..\..\icon.png" Pack="true" PackagePath="\" />

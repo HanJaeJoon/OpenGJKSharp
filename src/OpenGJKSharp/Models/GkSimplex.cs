@@ -5,7 +5,7 @@ namespace OpenGJKSharp.Models;
 /// The simplex is updated at each GJK-iteration.
 /// For the first iteration this value is a guess - and this guess not irrelevant.
 /// </summary>
-public class GkSimplex
+internal sealed class GkSimplex
 {
     /// <summary>
     /// Number of points defining the simplex.
@@ -30,4 +30,10 @@ public class GkSimplex
     /// These are computed using barycentric coordinates from the final simplex vertices.
     /// </summary>
     public double[,] Witnesses { get; } = new double[2, 3];
+
+    /// <summary>
+    /// Working buffers of the GJK loop, kept alive with the simplex so a reused simplex
+    /// does not allocate per query.
+    /// </summary>
+    public GkScratch Scratch { get; } = new();
 }

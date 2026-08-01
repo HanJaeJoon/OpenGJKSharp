@@ -7,9 +7,19 @@ namespace OpenGJKSharp.Models;
 /// </summary>
 internal sealed class GkPolytopeBody : GkBody
 {
-    private readonly GkPolytope _polytope;
+    private GkPolytope _polytope = null!;
+
+    public GkPolytopeBody()
+    {
+    }
 
     public GkPolytopeBody(GkPolytope polytope)
+    {
+        _polytope = polytope;
+    }
+
+    /// <summary>Points this body at another polytope so the instance can be reused across queries.</summary>
+    public void Reset(GkPolytope polytope)
     {
         _polytope = polytope;
     }

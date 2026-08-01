@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GjkWorkspace`: reusable scratch memory for queries. Every `HasCollision`,
+  `ComputeMinimumDistance`, and `ComputeCollisionInformation` overload (vertex arrays,
+  2D polygons, and `ISupportMappable` shapes) now has a counterpart taking a workspace.
+  Reusing one makes repeated queries allocation-free once its buffers have grown -
+  previously a support-mapped query allocated about 4 KB, and a colliding query
+  about 150 KB for the EPA pass.
+
+### Changed
+
+- **Breaking:** `GkPolytope` and `GkSimplex` are now `internal`, along with the
+  `OpenGjk` overloads that took them. They exposed internal algorithm state
+  (an undocumented `double[][]` coordinate layout and settable counters that could
+  break internal invariants). Vertex-array callers should use the `Vector3[]`/`Vector2[]`
+  overloads; callers who used them to avoid per-query allocation should use `GjkWorkspace`.
+- GJK/EPA internals no longer allocate temporaries per iteration (face normals, horizon
+  edges, witness computation and the distance sub-algorithm now work on reused buffers).
+
+### Deprecated
+
+- The `[Obsolete]` message on `OpenGjk.CsFunction` no longer points at the now-internal
+  `GkPolytope` overload.
+
 ## [0.5.0] - 2026-08-01
 
 ### Added
