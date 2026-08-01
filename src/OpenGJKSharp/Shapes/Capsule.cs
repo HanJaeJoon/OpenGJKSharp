@@ -6,6 +6,11 @@ namespace OpenGJKSharp.Shapes;
 /// A capsule: the set of points within <see cref="Radius"/> of the world-space
 /// segment from <see cref="P0"/> to <see cref="P1"/>.
 /// </summary>
+/// <remarks>
+/// The radius must be positive, but the segment may have zero length - that is a sphere, not
+/// a degenerate shape, and is handled exactly. For an actual zero-thickness segment, use a
+/// two-point <see cref="ConvexHull"/>.
+/// </remarks>
 public sealed class Capsule : ISupportMappable
 {
     /// <summary>The first endpoint of the capsule axis.</summary>

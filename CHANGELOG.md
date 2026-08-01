@@ -41,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Colliding bodies now report a minimum distance of exactly 0. The iteration used to leave a
   residual (about 1e-16 at unit scale, larger for bigger bodies), so `distance == 0` missed
   collisions; the residual is now measured against the size of the bodies and flushed to zero.
+- Documented the policy for degenerate shapes: a thickness parameter (`Sphere`/`Capsule`
+  radius, `Box` half extents) must be positive, while geometry given as explicit points may be
+  degenerate - a `ConvexHull` can be a single point, a segment, or a flat polygon. A `Capsule`
+  with coincident endpoints is a sphere, not an exception to the rule.
 - Documented the result contract that dogfooding found missing: the direction passed to
   `GetSupportPoint` is never zero but its length is unspecified; `GetCenter` must return an
   interior point and only affects convergence speed; witness points are meaningless while the

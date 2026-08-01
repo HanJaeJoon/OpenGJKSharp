@@ -6,6 +6,13 @@ namespace OpenGJKSharp.Shapes;
 /// The convex hull of a set of world-space points.
 /// The hull is never computed explicitly; the support mapping scans the vertices.
 /// </summary>
+/// <remarks>
+/// The points need not span a volume: a single point, two points (a segment), and coplanar
+/// points (a flat polygon) are all valid and queried exactly. This is the built-in way to
+/// use zero-thickness geometry, since the shapes defined by a thickness parameter
+/// (<see cref="Sphere"/>, <see cref="Capsule"/>, <see cref="Box"/>) require it to be positive.
+/// Duplicate and interior points are allowed; they only cost support-mapping time.
+/// </remarks>
 public sealed class ConvexHull : ISupportMappable
 {
     private readonly Vector3[] _points;

@@ -217,6 +217,20 @@ public sealed class Point : ISupportMappable
 }
 ```
 
+#### Degenerate shapes
+
+Shapes defined by a thickness parameter require it to be positive: `Sphere` and `Capsule`
+reject a zero or negative radius, and `Box` rejects a zero or negative half extent, since
+those are almost always a bug rather than an intent. A `Capsule` whose endpoints coincide is
+not one of those cases - it is exactly a sphere and is handled as such.
+
+Zero-thickness geometry is supported, through the shapes that take explicit points:
+`ConvexHull` accepts a single point, two points (a segment), or coplanar points (a flat
+polygon), and a custom `ISupportMappable` may describe any convex set. All of them, including
+two coincident points, are queried without special cases.
+
+#### Custom shapes
+
 Implementations must describe a convex shape, and `GetSupportPoint` must be exact for
 the shape - GJK/EPA accuracy depends on it. Note that the public interface uses
 single-precision `Vector3`, so support points are float-quantized on input (the
