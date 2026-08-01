@@ -45,17 +45,7 @@ public sealed class Box : ISupportMappable
             throw new ArgumentException($"Half extents must be positive and finite: {halfExtents}.", nameof(halfExtents));
         }
 
-        if (!ShapeArgument.IsFinite(orientation.X) || !ShapeArgument.IsFinite(orientation.Y)
-            || !ShapeArgument.IsFinite(orientation.Z) || !ShapeArgument.IsFinite(orientation.W))
-        {
-            throw new ArgumentException($"Orientation contains a non-finite component: {orientation}.", nameof(orientation));
-        }
-
-        float lengthSquared = orientation.LengthSquared();
-        if (lengthSquared <= 0)
-        {
-            throw new ArgumentException("Orientation must have a non-zero length.", nameof(orientation));
-        }
+        ShapeArgument.EnsureRotation(orientation, nameof(orientation), "Orientation");
 
         Center = center;
         HalfExtents = halfExtents;

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `TransformedShape`: places any `ISupportMappable` at a pose (rotation + translation),
+  so a shape can be defined once in local space and moved with `SetPose` instead of being
+  rebuilt every frame. Previously only `Box` accepted an orientation, and moving a
+  `ConvexHull` meant rebuilding its vertex array.
+
 - `GjkWorkspace`: reusable scratch memory for queries. Every `HasCollision`,
   `ComputeMinimumDistance`, and `ComputeCollisionInformation` overload (vertex arrays,
   2D polygons, and `ISupportMappable` shapes) now has a counterpart taking a workspace.

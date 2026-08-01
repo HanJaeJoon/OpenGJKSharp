@@ -21,6 +21,20 @@ internal static class ShapeArgument
         }
     }
 
+    public static void EnsureRotation(Quaternion rotation, string paramName, string description = "Rotation")
+    {
+        if (!IsFinite(rotation.X) || !IsFinite(rotation.Y)
+            || !IsFinite(rotation.Z) || !IsFinite(rotation.W))
+        {
+            throw new ArgumentException($"{description} contains a non-finite component: {rotation}.", paramName);
+        }
+
+        if (rotation.LengthSquared() <= 0)
+        {
+            throw new ArgumentException($"{description} must have a non-zero length.", paramName);
+        }
+    }
+
     public static void EnsurePositiveFinite(float value, string paramName, string description)
     {
         if (!IsFinite(value) || value <= 0)

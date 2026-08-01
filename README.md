@@ -147,6 +147,23 @@ double info = OpenGjk.ComputeCollisionInformation(sphere, box, out Vector3 conta
 ```
 
 `Sphere`, `Capsule`, `Box` (oriented, via a `Quaternion`), and `ConvexHull` are provided.
+
+`TransformedShape` places any of them - or your own shape - at a pose, so a shape can be
+defined once in local space and moved without rebuilding it. It is the only mutable shape:
+`SetPose` updates the pose in place, which keeps a physics loop free of per-frame rebuilds:
+
+``` c#
+var hull = new ConvexHull(localPoints);   // built once, in local space
+var body = new TransformedShape(hull);
+var workspace = new GjkWorkspace();
+
+foreach (var frame in frames)
+{
+    body.SetPose(frame.Rotation, frame.Position);
+    double distance = OpenGjk.ComputeMinimumDistance(body, ground, workspace);
+}
+```
+
 You can plug in any custom convex shape by implementing the interface:
 
 ``` c#
