@@ -68,8 +68,8 @@ public static class OpenGjk
     {
         ValidateVertices(a, b);
 
-        var bd1 = ToGkPolytope(a);
-        var bd2 = ToGkPolytope(b);
+        var bd1 = new GkPolytopeBody(ToGkPolytope(a));
+        var bd2 = new GkPolytopeBody(ToGkPolytope(b));
         var simplex = new GkSimplex();
 
         double distance = ComputeMinimumDistance(bd1, bd2, simplex);
@@ -161,6 +161,113 @@ public static class OpenGjk
             (float)simplex.Witnesses[1, 1]);
 
         return distance;
+    }
+
+    /// <summary>
+    /// Determines whether two support-mapped convex shapes collide.
+    /// </summary>
+    /// <param name="a">The first shape.</param>
+    /// <param name="b">The second shape.</param>
+    /// <param name="precision">Distance below which the shapes are considered colliding. Must not be negative.</param>
+    /// <returns><c>true</c> when the minimum distance is within <paramref name="precision"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="a"/> or <paramref name="b"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="precision"/> is negative.</exception>
+    public static bool HasCollision(ISupportMappable a, ISupportMappable b, double precision = _precision)
+    {
+        ValidateShapes(a, b);
+        if (precision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(precision), precision, "Precision must not be negative.");
+        }
+
+        double distance = ComputeMinimumDistance(new GkMappedBody(a), new GkMappedBody(b), new GkSimplex());
+
+        return distance <= precision;
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two support-mapped convex shapes.
+    /// Returns 0 when the shapes collide.
+    /// </summary>
+    /// <param name="a">The first shape.</param>
+    /// <param name="b">The second shape.</param>
+    /// <returns>The minimum distance between the two shapes.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="a"/> or <paramref name="b"/> is null.</exception>
+    public static double ComputeMinimumDistance(ISupportMappable a, ISupportMappable b)
+    {
+        return ComputeMinimumDistance(a, b, out _, out _);
+    }
+
+    /// <summary>
+    /// Computes the minimum distance between two support-mapped convex shapes,
+    /// along with the closest point on each shape (witness points).
+    /// Returns 0 when the shapes collide.
+    /// </summary>
+    /// <param name="a">The first shape.</param>
+    /// <param name="b">The second shape.</param>
+    /// <param name="closestA">Closest point on the first shape.</param>
+    /// <param name="closestB">Closest point on the second shape.</param>
+    /// <returns>The minimum distance between the two shapes.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="a"/> or <paramref name="b"/> is null.</exception>
+    public static double ComputeMinimumDistance(ISupportMappable a, ISupportMappable b, out Vector3 closestA, out Vector3 closestB)
+    {
+        ValidateShapes(a, b);
+
+        var simplex = new GkSimplex();
+        double distance = ComputeMinimumDistance(new GkMappedBody(a), new GkMappedBody(b), simplex);
+
+        closestA = new Vector3(
+            (float)simplex.Witnesses[0, 0],
+            (float)simplex.Witnesses[0, 1],
+            (float)simplex.Witnesses[0, 2]);
+        closestB = new Vector3(
+            (float)simplex.Witnesses[1, 0],
+            (float)simplex.Witnesses[1, 1],
+            (float)simplex.Witnesses[1, 2]);
+
+        return distance;
+    }
+
+    /// <summary>
+    /// Computes collision information between two support-mapped convex shapes.
+    /// Returns the minimum distance when the shapes are separated (positive value),
+    /// or the penetration depth computed by the EPA algorithm when they collide (negative value).
+    /// </summary>
+    /// <param name="a">The first shape.</param>
+    /// <param name="b">The second shape.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first shape toward the second.</param>
+    /// <returns>Positive separation distance, or negative penetration depth on collision.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="a"/> or <paramref name="b"/> is null.</exception>
+    public static double ComputeCollisionInformation(ISupportMappable a, ISupportMappable b, out Vector3 contactNormal)
+    {
+        ValidateShapes(a, b);
+
+        // The same body instances must serve both the GJK and EPA passes:
+        // the simplex records ids into each body's point store.
+        var bd1 = new GkMappedBody(a);
+        var bd2 = new GkMappedBody(b);
+        var simplex = new GkSimplex();
+
+        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+
+        double[] normal = new double[3];
+        ComputeCollisionInformation(bd1, bd2, simplex, ref distance, normal);
+
+        contactNormal = new Vector3((float)normal[0], (float)normal[1], (float)normal[2]);
+        return distance;
+    }
+
+    private static void ValidateShapes(ISupportMappable a, ISupportMappable b)
+    {
+        if (a is null)
+        {
+            throw new ArgumentNullException(nameof(a));
+        }
+
+        if (b is null)
+        {
+            throw new ArgumentNullException(nameof(b));
+        }
     }
 
     private static void ValidateVertices(Vector3[] a, Vector3[] b)
@@ -359,6 +466,11 @@ public static class OpenGjk
             throw new ArgumentNullException(nameof(s));
         }
 
+        return ComputeMinimumDistance(new GkPolytopeBody(bd1), new GkPolytopeBody(bd2), s);
+    }
+
+    internal static double ComputeMinimumDistance(GkBody bd1, GkBody bd2, GkSimplex s)
+    {
         uint k = 0; // Iteration counter
         const int mk = 25; // Maximum number of GJK iterations
         const double eps_rel = _gkEpsilon * 1e4; // Tolerance on relative
@@ -370,10 +482,13 @@ public static class OpenGjk
         double[] vMinus = new double[3];
         double norm2WMax = 0;
 
+        bd1.InitSupport();
+        bd2.InitSupport();
+
         // Initialize search direction
-        v[0] = bd1.Coord[0][0] - bd2.Coord[0][0];
-        v[1] = bd1.Coord[0][1] - bd2.Coord[0][1];
-        v[2] = bd1.Coord[0][2] - bd2.Coord[0][2];
+        v[0] = bd1.S[0] - bd2.S[0];
+        v[1] = bd1.S[1] - bd2.S[1];
+        v[2] = bd1.S[2] - bd2.S[2];
 
         // Initialize simplex
         s.NVrtx = 1;
@@ -381,20 +496,8 @@ public static class OpenGjk
         {
             s.Vrtx[0, t] = v[t];
         }
-        s.VrtxIdx[0, 0] = 0;
-        s.VrtxIdx[0, 1] = 0;
-
-        for (int t = 0; t < 3; ++t)
-        {
-            bd1.S[t] = bd1.Coord[0][t];
-        }
-        bd1.SIdx = 0;
-
-        for (int t = 0; t < 3; ++t)
-        {
-            bd2.S[t] = bd2.Coord[0][t];
-        }
-        bd2.SIdx = 0;
+        s.VrtxIdx[0, 0] = bd1.SIdx;
+        s.VrtxIdx[0, 1] = bd2.SIdx;
 
         // Begin GJK iteration
         do
@@ -408,8 +511,8 @@ public static class OpenGjk
             }
 
             // Support function
-            Support(bd1, vMinus);
-            Support(bd2, v);
+            bd1.Support(vMinus);
+            bd2.Support(v);
             for (int t = 0; t < 3; ++t)
             {
                 w[t] = bd1.S[t] - bd2.S[t];
@@ -466,34 +569,6 @@ public static class OpenGjk
 
         ComputeWitnesses(bd1, bd2, s);
         return Math.Sqrt(Norm2(v));
-    }
-
-    private static void Support(GkPolytope body, double[] v)
-    {
-        double s, maxS;
-        double[] vrt;
-        int better = -1;
-
-        maxS = DotProduct(body.S, v);
-
-        for (int i = 0; i < body.NumPoints; ++i)
-        {
-            vrt = body.Coord[i];
-            s = DotProduct(vrt, v);
-            if (s > maxS)
-            {
-                maxS = s;
-                better = i;
-            }
-        }
-
-        if (better != -1)
-        {
-            body.S[0] = body.Coord[better][0];
-            body.S[1] = body.Coord[better][1];
-            body.S[2] = body.Coord[better][2];
-            body.SIdx = better;
-        }
     }
 
     private static double DotProduct(double[] a, double[] b)
@@ -1221,7 +1296,7 @@ public static class OpenGjk
             s.VrtxIdx[0, t] = someIdx[t];
     }
 
-    private static void ComputeWitnesses(GkPolytope bd1, GkPolytope bd2, GkSimplex smp)
+    private static void ComputeWitnesses(GkBody bd1, GkBody bd2, GkSimplex smp)
     {
         switch (smp.NVrtx)
         {
@@ -1243,10 +1318,10 @@ public static class OpenGjk
         }
     }
 
-    private static void W0D(GkPolytope bd1, GkPolytope bd2, GkSimplex smp)
+    private static void W0D(GkBody bd1, GkBody bd2, GkSimplex smp)
     {
-        var w00 = bd1.Coord[smp.VrtxIdx[0, 0]];
-        var w01 = bd2.Coord[smp.VrtxIdx[0, 1]];
+        var w00 = bd1.GetPoint(smp.VrtxIdx[0, 0]);
+        var w01 = bd2.GetPoint(smp.VrtxIdx[0, 1]);
 
         for (int t = 0; t < 3; t++)
         {
@@ -1255,7 +1330,7 @@ public static class OpenGjk
         }
     }
 
-    private static void W1D(GkPolytope bd1, GkPolytope bd2, GkSimplex smp)
+    private static void W1D(GkBody bd1, GkBody bd2, GkSimplex smp)
     {
         var pq = new double[3];
         var po = new double[3];
@@ -1283,10 +1358,10 @@ public static class OpenGjk
         double a0 = 1.0 - a1;
 
         // Compute witness points
-        double[] w00 = bd1.Coord[smp.VrtxIdx[0, 0]];
-        double[] w01 = bd2.Coord[smp.VrtxIdx[0, 1]];
-        double[] w10 = bd1.Coord[smp.VrtxIdx[1, 0]];
-        double[] w11 = bd2.Coord[smp.VrtxIdx[1, 1]];
+        double[] w00 = bd1.GetPoint(smp.VrtxIdx[0, 0]);
+        double[] w01 = bd2.GetPoint(smp.VrtxIdx[0, 1]);
+        double[] w10 = bd1.GetPoint(smp.VrtxIdx[1, 0]);
+        double[] w11 = bd2.GetPoint(smp.VrtxIdx[1, 1]);
         for (int t = 0; t < 3; t++)
         {
             smp.Witnesses[0, t] = w00[t] * a0 + w10[t] * a1;
@@ -1294,7 +1369,7 @@ public static class OpenGjk
         }
     }
 
-    private static void W2D(GkPolytope bd1, GkPolytope bd2, GkSimplex smp)
+    private static void W2D(GkBody bd1, GkBody bd2, GkSimplex smp)
     {
         var pq = new double[3];
         var pr = new double[3];
@@ -1365,12 +1440,12 @@ public static class OpenGjk
         // Compute witness points
         // This is done by blending the source points using
         // the barycentric coordinates
-        double[] w00 = bd1.Coord[smp.VrtxIdx[0, 0]];
-        double[] w01 = bd2.Coord[smp.VrtxIdx[0, 1]];
-        double[] w10 = bd1.Coord[smp.VrtxIdx[1, 0]];
-        double[] w11 = bd2.Coord[smp.VrtxIdx[1, 1]];
-        double[] w20 = bd1.Coord[smp.VrtxIdx[2, 0]];
-        double[] w21 = bd2.Coord[smp.VrtxIdx[2, 1]];
+        double[] w00 = bd1.GetPoint(smp.VrtxIdx[0, 0]);
+        double[] w01 = bd2.GetPoint(smp.VrtxIdx[0, 1]);
+        double[] w10 = bd1.GetPoint(smp.VrtxIdx[1, 0]);
+        double[] w11 = bd2.GetPoint(smp.VrtxIdx[1, 1]);
+        double[] w20 = bd1.GetPoint(smp.VrtxIdx[2, 0]);
+        double[] w21 = bd2.GetPoint(smp.VrtxIdx[2, 1]);
         for (int t = 0; t < 3; t++)
         {
             smp.Witnesses[0, t] = w00[t] * a0 + w10[t] * a1 + w20[t] * a2;
@@ -1378,7 +1453,7 @@ public static class OpenGjk
         }
     }
 
-    private static void W3D(GkPolytope bd1, GkPolytope bd2, GkSimplex smp)
+    private static void W3D(GkBody bd1, GkBody bd2, GkSimplex smp)
     {
         var pq = new double[3];
         var pr = new double[3];
@@ -1481,14 +1556,14 @@ public static class OpenGjk
         // Compute witness points
         // This is done by blending the original points using
         // the barycentric coordinates
-        double[] w00 = bd1.Coord[smp.VrtxIdx[0, 0]];
-        double[] w01 = bd2.Coord[smp.VrtxIdx[0, 1]];
-        double[] w10 = bd1.Coord[smp.VrtxIdx[1, 0]];
-        double[] w11 = bd2.Coord[smp.VrtxIdx[1, 1]];
-        double[] w20 = bd1.Coord[smp.VrtxIdx[2, 0]];
-        double[] w21 = bd2.Coord[smp.VrtxIdx[2, 1]];
-        double[] w30 = bd1.Coord[smp.VrtxIdx[3, 0]];
-        double[] w31 = bd2.Coord[smp.VrtxIdx[3, 1]];
+        double[] w00 = bd1.GetPoint(smp.VrtxIdx[0, 0]);
+        double[] w01 = bd2.GetPoint(smp.VrtxIdx[0, 1]);
+        double[] w10 = bd1.GetPoint(smp.VrtxIdx[1, 0]);
+        double[] w11 = bd2.GetPoint(smp.VrtxIdx[1, 1]);
+        double[] w20 = bd1.GetPoint(smp.VrtxIdx[2, 0]);
+        double[] w21 = bd2.GetPoint(smp.VrtxIdx[2, 1]);
+        double[] w30 = bd1.GetPoint(smp.VrtxIdx[3, 0]);
+        double[] w31 = bd2.GetPoint(smp.VrtxIdx[3, 1]);
         for (int t = 0; t < 3; t++)
         {
             smp.Witnesses[0, t] = w00[t] * a0 + w10[t] * a1 + w20[t] * a2 + w30[t] * a3;
@@ -1783,47 +1858,24 @@ public static class OpenGjk
         return value > 1.0 ? 1.0 : value;
     }
 
-    // Support function for EPA, basically the GJK one but only cares about the Minkowski difference point
-    private static void SupportEpa(GkPolytope body1, GkPolytope body2,
+    // Support function for EPA: fresh (stateless) support of each body,
+    // body2 searched in the opposite direction, combined into the Minkowski difference point.
+    private static void SupportEpa(GkBody body1, GkBody body2,
         double[] direction, double[] result, int[] resultIdx)
     {
-        double localMax1 = -1e10;
-        double localMax2 = -1e10;
-        int localBest1 = -1;
-        int localBest2 = -1;
+        double[] negDirection = [-direction[0], -direction[1], -direction[2]];
+        double[] p1 = new double[3];
+        double[] p2 = new double[3];
 
-        // Search body1
-        for (int i = 0; i < body1.NumPoints; i++)
-        {
-            double s = DotProduct(body1.Coord[i], direction);
-            if (s > localMax1)
-            {
-                localMax1 = s;
-                localBest1 = i;
-            }
-        }
+        body1.SupportInto(direction, p1, out int idx1);
+        body2.SupportInto(negDirection, p2, out int idx2);
 
-        // Search body2 in opposite direction
-        for (int i = 0; i < body2.NumPoints; i++)
+        for (int i = 0; i < 3; i++)
         {
-            double s = DotProduct(body2.Coord[i], direction);
-            if (-s > localMax2)
-            {
-                localMax2 = -s;
-                localBest2 = i;
-            }
+            result[i] = p1[i] - p2[i];
         }
-
-        // Compute Minkowski difference point
-        if (localBest1 >= 0 && localBest2 >= 0)
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                result[i] = body1.Coord[localBest1][i] - body2.Coord[localBest2][i];
-            }
-            resultIdx[0] = localBest1;
-            resultIdx[1] = localBest2;
-        }
+        resultIdx[0] = idx1;
+        resultIdx[1] = idx2;
     }
 
     private static void SetContactNormal(GkSimplex smp, double[] contactNormal)
@@ -1863,6 +1915,12 @@ public static class OpenGjk
     /// <param name="distance">On input the GJK distance; on output negative penetration depth when colliding.</param>
     /// <param name="contactNormal">Receives the contact normal (length 3).</param>
     public static void ComputeCollisionInformation(GkPolytope bd1, GkPolytope bd2,
+        GkSimplex simplex, ref double distance, double[] contactNormal)
+    {
+        ComputeCollisionInformation(new GkPolytopeBody(bd1), new GkPolytopeBody(bd2), simplex, ref distance, contactNormal);
+    }
+
+    internal static void ComputeCollisionInformation(GkBody bd1, GkBody bd2,
         GkSimplex simplex, ref double distance, double[] contactNormal)
     {
         const double epsSq = _gkEpsilon * _gkEpsilon;
@@ -1918,8 +1976,8 @@ public static class OpenGjk
                     distance = 0;
                     for (int c = 0; c < 3; ++c)
                     {
-                        simplex.Witnesses[0, c] = bd1.Coord[newVertexIdx[0]][c];
-                        simplex.Witnesses[1, c] = bd2.Coord[newVertexIdx[1]][c];
+                        simplex.Witnesses[0, c] = bd1.GetPoint(newVertexIdx[0])[c];
+                        simplex.Witnesses[1, c] = bd2.GetPoint(newVertexIdx[1])[c];
                     }
                     SetContactNormal(simplex, contactNormal);
                     return;
@@ -1993,8 +2051,8 @@ public static class OpenGjk
                     distance = 0;
                     for (int c = 0; c < 3; ++c)
                     {
-                        simplex.Witnesses[0, c] = bd1.Coord[newVertexIdx[0]][c];
-                        simplex.Witnesses[1, c] = bd2.Coord[newVertexIdx[1]][c];
+                        simplex.Witnesses[0, c] = bd1.GetPoint(newVertexIdx[0])[c];
+                        simplex.Witnesses[1, c] = bd2.GetPoint(newVertexIdx[1])[c];
                     }
                     SetContactNormal(simplex, contactNormal);
                     return;
@@ -2086,8 +2144,8 @@ public static class OpenGjk
                         distance = 0;
                         for (int c = 0; c < 3; ++c)
                         {
-                            simplex.Witnesses[0, c] = bd1.Coord[newVertexIdx[0]][c];
-                            simplex.Witnesses[1, c] = bd2.Coord[newVertexIdx[1]][c];
+                            simplex.Witnesses[0, c] = bd1.GetPoint(newVertexIdx[0])[c];
+                            simplex.Witnesses[1, c] = bd2.GetPoint(newVertexIdx[1])[c];
                         }
                         SetContactNormal(simplex, contactNormal);
                         return;
@@ -2103,8 +2161,8 @@ public static class OpenGjk
                 int best = simplex.NVrtx > 0 ? simplex.NVrtx - 1 : 0;
                 for (int c = 0; c < 3; ++c)
                 {
-                    simplex.Witnesses[0, c] = bd1.Coord[simplex.VrtxIdx[best, 0]][c];
-                    simplex.Witnesses[1, c] = bd2.Coord[simplex.VrtxIdx[best, 1]][c];
+                    simplex.Witnesses[0, c] = bd1.GetPoint(simplex.VrtxIdx[best, 0])[c];
+                    simplex.Witnesses[1, c] = bd2.GetPoint(simplex.VrtxIdx[best, 1])[c];
                 }
                 SetContactNormal(simplex, contactNormal);
                 return;
@@ -2178,12 +2236,12 @@ public static class OpenGjk
                     poly.Vertices[closest.V[2]], out double a0, out double a1, out double a2);
                 for (int i = 0; i < 3; i++)
                 {
-                    simplex.Witnesses[0, i] = bd1.Coord[closest.VIdx[0][0]][i] * a0
-                        + bd1.Coord[closest.VIdx[1][0]][i] * a1
-                        + bd1.Coord[closest.VIdx[2][0]][i] * a2;
-                    simplex.Witnesses[1, i] = bd2.Coord[closest.VIdx[0][1]][i] * a0
-                        + bd2.Coord[closest.VIdx[1][1]][i] * a1
-                        + bd2.Coord[closest.VIdx[2][1]][i] * a2;
+                    simplex.Witnesses[0, i] = bd1.GetPoint(closest.VIdx[0][0])[i] * a0
+                        + bd1.GetPoint(closest.VIdx[1][0])[i] * a1
+                        + bd1.GetPoint(closest.VIdx[2][0])[i] * a2;
+                    simplex.Witnesses[1, i] = bd2.GetPoint(closest.VIdx[0][1])[i] * a0
+                        + bd2.GetPoint(closest.VIdx[1][1])[i] * a1
+                        + bd2.GetPoint(closest.VIdx[2][1])[i] * a2;
                     contactNormal[i] = closest.Normal[i];
                 }
                 distance = -closestDistance;
@@ -2212,12 +2270,12 @@ public static class OpenGjk
                     poly.Vertices[closest.V[2]], out double a0, out double a1, out double a2);
                 for (int i = 0; i < 3; i++)
                 {
-                    simplex.Witnesses[0, i] = bd1.Coord[closest.VIdx[0][0]][i] * a0
-                        + bd1.Coord[closest.VIdx[1][0]][i] * a1
-                        + bd1.Coord[closest.VIdx[2][0]][i] * a2;
-                    simplex.Witnesses[1, i] = bd2.Coord[closest.VIdx[0][1]][i] * a0
-                        + bd2.Coord[closest.VIdx[1][1]][i] * a1
-                        + bd2.Coord[closest.VIdx[2][1]][i] * a2;
+                    simplex.Witnesses[0, i] = bd1.GetPoint(closest.VIdx[0][0])[i] * a0
+                        + bd1.GetPoint(closest.VIdx[1][0])[i] * a1
+                        + bd1.GetPoint(closest.VIdx[2][0])[i] * a2;
+                    simplex.Witnesses[1, i] = bd2.GetPoint(closest.VIdx[0][1])[i] * a0
+                        + bd2.GetPoint(closest.VIdx[1][1])[i] * a1
+                        + bd2.GetPoint(closest.VIdx[2][1])[i] * a2;
                     contactNormal[i] = closest.Normal[i];
                 }
                 distance = -closestDistance;
@@ -2418,12 +2476,12 @@ public static class OpenGjk
                     poly.Vertices[closest.V[2]], out double a0, out double a1, out double a2);
                 for (int i = 0; i < 3; i++)
                 {
-                    simplex.Witnesses[0, i] = bd1.Coord[closest.VIdx[0][0]][i] * a0
-                        + bd1.Coord[closest.VIdx[1][0]][i] * a1
-                        + bd1.Coord[closest.VIdx[2][0]][i] * a2;
-                    simplex.Witnesses[1, i] = bd2.Coord[closest.VIdx[0][1]][i] * a0
-                        + bd2.Coord[closest.VIdx[1][1]][i] * a1
-                        + bd2.Coord[closest.VIdx[2][1]][i] * a2;
+                    simplex.Witnesses[0, i] = bd1.GetPoint(closest.VIdx[0][0])[i] * a0
+                        + bd1.GetPoint(closest.VIdx[1][0])[i] * a1
+                        + bd1.GetPoint(closest.VIdx[2][0])[i] * a2;
+                    simplex.Witnesses[1, i] = bd2.GetPoint(closest.VIdx[0][1])[i] * a0
+                        + bd2.GetPoint(closest.VIdx[1][1])[i] * a1
+                        + bd2.GetPoint(closest.VIdx[2][1])[i] * a2;
                     contactNormal[i] = closest.Normal[i];
                 }
                 distance = -closestDistance;

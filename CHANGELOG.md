@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-01
+
+### Added
+
+- `ISupportMappable` support-mapping interface: GJK/EPA queries on implicit convex shapes without tessellation
+- Built-in shapes in `OpenGJKSharp.Shapes`: `Sphere`, `Capsule`, `Box` (oriented), `ConvexHull`
+- `OpenGjk` overloads for `ISupportMappable`: `HasCollision`, `ComputeMinimumDistance` (with and without witness points), and `ComputeCollisionInformation`
+
+### Changed
+
+- Internal GJK/EPA loops now run on a support-function abstraction; the vertex-array and `GkPolytope` APIs are unchanged and keep their exact behavior
+
 ## [0.4.0] - 2026-07-23
 
 ### Added
@@ -69,7 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: GJK minimum distance and `HasCollision` for convex polyhedra (`Vector3[]`) and flat polygons (`Vector2[]`)
 
-[Unreleased]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.1.0...v0.2.0

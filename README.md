@@ -105,6 +105,49 @@ Console.WriteLine($"Closest points: {closestA} <-> {closestB}");
 `HasCollision` and `ComputeMinimumDistance` also accept `Vector2[]` polygons
 (treated as flat shapes on the z = 0 plane).
 
+### Shapes and custom support functions
+
+GJK is a support-function-based algorithm, so shapes like spheres and capsules can be
+handled exactly - without tessellation - through the `ISupportMappable` interface.
+Built-in shapes live in `OpenGJKSharp.Shapes`:
+
+``` c#
+using OpenGJKSharp;
+using OpenGJKSharp.Shapes;
+using System.Numerics;
+
+var sphere = new Sphere(new Vector3(0, 0, 0), radius: 1f);
+var box = new Box(new Vector3(3, 0, 0), halfExtents: new Vector3(1, 1, 1));
+
+bool hit = OpenGjk.HasCollision(sphere, box);
+double distance = OpenGjk.ComputeMinimumDistance(sphere, box, out Vector3 onSphere, out Vector3 onBox);
+double info = OpenGjk.ComputeCollisionInformation(sphere, box, out Vector3 contactNormal);
+```
+
+`Sphere`, `Capsule`, `Box` (oriented, via a `Quaternion`), and `ConvexHull` are provided.
+You can plug in any custom convex shape by implementing the interface:
+
+``` c#
+public sealed class Point : ISupportMappable
+{
+    private readonly Vector3 _position;
+
+    public Point(Vector3 position) => _position = position;
+
+    // Furthest point of the shape in the given direction (world space).
+    public Vector3 GetSupportPoint(Vector3 direction) => _position;
+
+    // An interior point, used as the initial guess for GJK.
+    public Vector3 GetCenter() => _position;
+}
+```
+
+Implementations must describe a convex shape, and `GetSupportPoint` must be exact for
+the shape - GJK/EPA accuracy depends on it. Note that the public interface uses
+single-precision `Vector3`, so support points are float-quantized on input (the
+vertex-array API has the same input quantization); internal math runs in double
+precision.
+
 ## License
 
 OpenGJKSharp is licensed under [GPL-3.0](LICENSE), following the upstream
