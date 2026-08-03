@@ -248,6 +248,101 @@ single-precision `Vector3`, so support points are float-quantized on input (the
 vertex-array API has the same input quantization); internal math runs in double
 precision.
 
+## Migrating from 0.5.0
+
+0.6.0 removes two types from the public surface and fixes three results that used to be wrong.
+Everything else in the 0.5.0 API is unchanged.
+
+### `GkPolytope` / `GkSimplex` are now internal
+
+They exposed internal algorithm state - an undocumented `double[][]` coordinate layout and
+settable counters that could break internal invariants - so they are `internal`, along with the
+`OpenGjk` overloads that took them. Code using them fails to compile (CS0122/CS0246). Pass the
+vertices directly instead:
+
+``` c#
+// 0.5.0
+var bd1 = new GkPolytope { NumPoints = 3, Coord = [[0, 0, 0], [1, 0, 0], [0, 1, 0]] };
+var bd2 = new GkPolytope { NumPoints = 3, Coord = [[2, 0, 0], [3, 0, 0], [2, 1, 0]] };
+double distance = OpenGjk.ComputeMinimumDistance(bd1, bd2);
+
+// 0.6.0
+Vector3[] a = [new(0, 0, 0), new(1, 0, 0), new(0, 1, 0)];
+Vector3[] b = [new(2, 0, 0), new(3, 0, 0), new(2, 1, 0)];
+double distance = OpenGjk.ComputeMinimumDistance(a, b);
+```
+
+Note that `GkPolytope.Coord` was a `[point][axis]` array, while the double-precision overloads
+take one flat span of consecutive (x, y, z) triples.
+
+If you reused a `GkPolytope`/`GkSimplex` pair across queries to avoid per-query allocation, that
+is what `GjkWorkspace` is for now - and it covers every query kind, not just the vertex arrays:
+
+``` c#
+// 0.5.0
+var simplex = new GkSimplex();
+foreach (var (bd1, bd2) in pairs)
+{
+    double distance = OpenGjk.ComputeMinimumDistance(bd1, bd2, simplex);
+    OpenGjk.ComputeCollisionInformation(bd1, bd2, simplex, ref distance, normal);
+}
+
+// 0.6.0
+var workspace = new GjkWorkspace();
+foreach (var (a, b) in pairs)
+{
+    double distance = OpenGjk.ComputeMinimumDistance(a, b, workspace);
+    double info = OpenGjk.ComputeCollisionInformation(a, b, workspace, out Vector3 normal);
+}
+```
+
+A workspace must not be shared between threads - use one per thread (see
+[Reusing buffers in a query loop](#reusing-buffers-in-a-query-loop-gjkworkspace)).
+
+### `CsFunction` callers
+
+`CsFunction` (the legacy openGJK C interface, `[Obsolete]` since 0.4.0) still exists but is
+superseded by the `ReadOnlySpan<double>` overloads, which are the same algorithm with the full
+result set - witness points and penetration depth, not just the distance. It took a `[axis, point]`
+array; the new overloads take consecutive (x, y, z) triples:
+
+``` c#
+// 0.5.0
+double[,] a = { { 0, 1, 0 }, { 0, 0, 1 }, { 0, 0, 0 } };   // [axis, point]
+double[,] b = { { 2, 3, 2 }, { 0, 0, 1 }, { 0, 0, 0 } };
+double distance = OpenGjk.CsFunction(3, a, 3, b);
+
+// 0.6.0
+double[] a = [0, 0, 0, 1, 0, 0, 0, 1, 0];                 // (x, y, z) triples
+double[] b = [2, 0, 0, 3, 0, 0, 2, 1, 0];
+double distance = OpenGjk.ComputeMinimumDistance(a, b);
+```
+
+### Results that changed
+
+These are bug fixes, but if your code depended on the old values, check these three:
+
+- **Colliding bodies now report a minimum distance of exactly 0.** `ComputeMinimumDistance` used
+  to leave a residual (about 1e-16 at unit scale, larger for bigger bodies), so a `distance == 0`
+  test missed collisions. If you compensated with an epsilon, the epsilon is no longer needed.
+- **Penetration depth is larger for curved shapes.** A polytope face is a lower bound on the depth
+  and can never resolve a curved surface, which cost up to 5.6% (two concentric unit spheres
+  reported 1.888 instead of 2.0). The depth now comes from the tightest support plane, an upper
+  bound, so worst-case error over a sphere overlap sweep is 0.24%. Depenetration that used to
+  leave a sliver of overlap now separates the bodies; polyhedra are unaffected (still exact).
+- **Bodies whose interior points coincide now report a depth instead of 0.** Concentric bodies, one
+  body containing another, and two long bodies crossing at their common center used to come back
+  with depth 0 - indistinguishable from "not colliding" for callers that tested the depth.
+
+### `netstandard2.0` consumers gain a `System.Memory` dependency
+
+The `ReadOnlySpan<double>` overloads need `Span<T>`, which is not in the box before
+`netstandard2.1`, so the `netstandard2.0` target adds a `System.Memory` package reference (4.6.3).
+This affects .NET Framework consumers only; `netstandard2.1`, `net8.0`, and `net10.0` are
+unchanged. On .NET Framework, prefer a PackageReference project (SDK-style csproj or
+`packages.config` migrated to PackageReference) - transitive dependencies do not resolve
+automatically under classic `packages.config`.
+
 ## License
 
 OpenGJKSharp is licensed under [GPL-3.0](LICENSE), following the upstream
