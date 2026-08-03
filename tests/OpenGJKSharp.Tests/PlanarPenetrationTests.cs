@@ -1,4 +1,4 @@
-using OpenGJKSharp.Shapes;
+﻿using OpenGJKSharp.Shapes;
 using System.Numerics;
 
 namespace OpenGJKSharp.Tests;
@@ -183,7 +183,7 @@ public class PlanarPenetrationTests
 
         Assert.True(OpenGjk.TryGetPenetration(point, point, out double depth, out _));
         Assert.Equal(0.0, depth, 12);
-        Assert.False(double.IsNegative(depth));
+        Assert.False(Numbers.IsNegative(depth));
     }
 
     [Fact]
@@ -252,7 +252,7 @@ public class PlanarPenetrationTests
 
         Assert.True(OpenGjk.TryGetPenetration(a, b, out double depth, out _));
         Assert.Equal(0.0, depth, 6);
-        Assert.False(double.IsNegative(depth));
+        Assert.False(Numbers.IsNegative(depth));
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-using OpenGJKSharp.Shapes;
+﻿using OpenGJKSharp.Shapes;
 using System.Numerics;
 
 namespace OpenGJKSharp.Tests;
@@ -40,7 +40,7 @@ public class TryGetPenetrationTests
 
         // Positive zero, not negative zero: the latter formats as "-0" and flips the sign of
         // anything divided by it.
-        Assert.False(double.IsNegative(depth));
+        Assert.False(Numbers.IsNegative(depth));
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public class TryGetPenetrationTests
         Span<double> normal = stackalloc double[3];
         Assert.True(OpenGjk.TryGetPenetration(a, b, normal, out double depth));
         Assert.Equal(0.0, depth, 12);
-        Assert.False(double.IsNegative(depth));
+        Assert.False(Numbers.IsNegative(depth));
     }
 
     [Fact]
