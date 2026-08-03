@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TryGetPenetration`, an unsigned convenience overload for depenetration: it returns whether
   the bodies collide, a positive depth, and the contact normal, so callers no longer have to
   interpret the sign convention of `ComputeCollisionInformation` (negative means colliding).
-  Available for `ISupportMappable` shapes and vertex arrays, each with a `GjkWorkspace` variant.
+  Available for `ISupportMappable` shapes, vertex arrays, and `ReadOnlySpan<double>` coordinates,
+  each with a `GjkWorkspace` variant.
 - Double-precision query overloads taking coordinates as a `ReadOnlySpan<double>` of
   consecutive (x, y, z) triples (`HasCollision`, `ComputeMinimumDistance` with and without
   witness points, `ComputeCollisionInformation`, each with a `GjkWorkspace` variant).

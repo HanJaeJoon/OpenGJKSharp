@@ -831,6 +831,46 @@ public static class OpenGjk
         return ToPenetration(info, out depth);
     }
 
+    /// <summary>
+    /// Determines whether two convex polytopes given in double precision collide and,
+    /// if so, by how much.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="contactNormal">Receives the contact normal, pointing from the first body toward the second. Must hold at least 3 elements.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the bodies are apart or touch exactly.</param>
+    /// <returns><c>true</c> when the bodies overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, a coordinate is not finite,
+    /// or <paramref name="contactNormal"/> is shorter than 3 elements.</exception>
+    public static bool TryGetPenetration(ReadOnlySpan<double> a, ReadOnlySpan<double> b,
+        Span<double> contactNormal, out double depth)
+    {
+        return TryGetPenetration(a, b, new GjkWorkspace(), contactNormal, out depth);
+    }
+
+    /// <summary>
+    /// Determines whether two convex polytopes given in double precision collide and, if so,
+    /// by how much, reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="contactNormal">Receives the contact normal, pointing from the first body toward the second. Must hold at least 3 elements.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the bodies are apart or touch exactly.</param>
+    /// <returns><c>true</c> when the bodies overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, a coordinate is not finite,
+    /// or <paramref name="contactNormal"/> is shorter than 3 elements.</exception>
+    public static bool TryGetPenetration(ReadOnlySpan<double> a, ReadOnlySpan<double> b,
+        GjkWorkspace workspace, Span<double> contactNormal, out double depth)
+    {
+        double info = ComputeCollisionInformation(a, b, workspace, contactNormal);
+
+        return ToPenetration(info, out depth);
+    }
+
     // Collision information is signed - negative depth on collision, positive separation
     // distance otherwise - which is exactly the convention that is easy to get backwards.
     private static bool ToPenetration(double collisionInformation, out double depth)

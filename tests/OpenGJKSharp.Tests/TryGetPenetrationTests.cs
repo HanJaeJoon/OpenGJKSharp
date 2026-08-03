@@ -123,4 +123,112 @@ public class TryGetPenetrationTests
         Assert.Throws<ArgumentNullException>(() => OpenGjk.TryGetPenetration(sphere, sphere, null!, out _, out _));
         Assert.Throws<ArgumentException>(() => OpenGjk.TryGetPenetration(cloud, [], out _, out _));
     }
+
+    [Fact]
+    public void Should_MatchComputeCollisionInformation_When_BodiesAreDoubleCoordinates()
+    {
+        double[] a = [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1];
+        double[] b = [0.75, 0, 0, 1.75, 0, 0, 0.75, 1, 0, 1.75, 1, 0, 0.75, 0, 1, 1.75, 0, 1, 0.75, 1, 1, 1.75, 1, 1];
+
+        Span<double> expectedNormal = stackalloc double[3];
+        double info = OpenGjk.ComputeCollisionInformation(a, b, expectedNormal);
+
+        Span<double> normal = stackalloc double[3];
+        bool colliding = OpenGjk.TryGetPenetration(a, b, normal, out double depth);
+
+        Assert.True(colliding);
+        Assert.Equal(-info, depth);
+        Assert.Equal(0.25, depth, 12);
+        for (int t = 0; t < 3; t++)
+        {
+            Assert.Equal(expectedNormal[t], normal[t]);
+        }
+    }
+
+    [Fact]
+    public void Should_ReportZeroDepth_When_DoubleCoordinatesAreApart()
+    {
+        double[] a = [0, 0, 0, 1, 0, 0, 0, 1, 0];
+        double[] b = [5, 0, 0, 6, 0, 0, 5, 1, 0];
+
+        Span<double> normal = stackalloc double[3];
+        Assert.False(OpenGjk.TryGetPenetration(a, b, normal, out double depth));
+        Assert.Equal(0.0, depth);
+
+        // The normal still points from the first body toward the second.
+        Assert.Equal(1.0, normal[0], 6);
+    }
+
+    [Fact]
+    public void Should_NotReportNegativeZero_When_DoubleCoordinatesTouchExactly()
+    {
+        double[] a = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
+        double[] b = [1, 0, 0, 2, 0, 0, 1, 1, 0, 1, 0, 1];
+
+        Span<double> normal = stackalloc double[3];
+        Assert.True(OpenGjk.TryGetPenetration(a, b, normal, out double depth));
+        Assert.Equal(0.0, depth, 12);
+        Assert.False(double.IsNegative(depth));
+    }
+
+    [Fact]
+    public void Should_MatchAllocatingOverload_When_DoubleWorkspaceIsReused()
+    {
+        var workspace = new GjkWorkspace();
+        double[] a = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
+        double[] b = [0.5, 0, 0, 1.5, 0, 0, 0.5, 1, 0, 0.5, 0, 1];
+
+        for (int i = 0; i < 5; i++)
+        {
+            Span<double> expectedNormal = stackalloc double[3];
+            bool expected = OpenGjk.TryGetPenetration(a, b, expectedNormal, out double expectedDepth);
+
+            Span<double> normal = stackalloc double[3];
+            bool actual = OpenGjk.TryGetPenetration(a, b, workspace, normal, out double depth);
+
+            Assert.Equal(expected, actual);
+            Assert.Equal(expectedDepth, depth);
+            for (int t = 0; t < 3; t++)
+            {
+                Assert.Equal(expectedNormal[t], normal[t]);
+            }
+        }
+    }
+
+    [Fact]
+    public void Should_Throw_When_DoubleArgumentsAreInvalid()
+    {
+        double[] coords = [0, 0, 0];
+        double[] normal = new double[3];
+
+        Assert.Throws<ArgumentNullException>(
+            () => OpenGjk.TryGetPenetration(coords, coords, null!, normal, out _));
+        Assert.Throws<ArgumentException>(() => OpenGjk.TryGetPenetration(coords, [], normal, out _));
+        Assert.Throws<ArgumentException>(() => OpenGjk.TryGetPenetration(coords, coords, new double[2], out _));
+    }
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public void Should_StopAllocating_When_DoubleWorkspaceIsReused()
+    {
+        var workspace = new GjkWorkspace();
+        double[] a = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
+        double[] b = [0.5, 0, 0, 1.5, 0, 0, 0.5, 1, 0, 0.5, 0, 1];
+        double[] normal = new double[3];
+
+        for (int i = 0; i < 20; i++)
+        {
+            OpenGjk.TryGetPenetration(a, b, workspace, normal, out _);
+        }
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++)
+        {
+            OpenGjk.TryGetPenetration(a, b, workspace, normal, out _);
+        }
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(bytes == 0, $"expected no allocation with a reused workspace, got {bytes} bytes");
+    }
+#endif
 }

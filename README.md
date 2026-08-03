@@ -147,6 +147,12 @@ double distance = OpenGjk.ComputeMinimumDistance(a, b);   // 0.001, not 0
 
 Span<double> normal = stackalloc double[3];
 double info = OpenGjk.ComputeCollisionInformation(a, b, normal);
+
+if (OpenGjk.TryGetPenetration(a, b, normal, out double depth))
+{
+    // Same unsigned result as the Vector3 overload: depth is positive, normal points
+    // from the first body toward the second.
+}
 ```
 
 These overloads replace the legacy `CsFunction` (the obsolete openGJK C interface,

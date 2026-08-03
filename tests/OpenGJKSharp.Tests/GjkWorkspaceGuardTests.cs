@@ -66,6 +66,10 @@ public class GjkWorkspaceGuardTests
                 "TryGetPenetration(ISupportMappable)",
                 w => OpenGjk.TryGetPenetration(shapeA, shapeB, w, out double _, out Vector3 _)
             },
+            {
+                "TryGetPenetration(ReadOnlySpan<double>)",
+                w => OpenGjk.TryGetPenetration(_coordsA, _coordsB, w, new double[3], out double _)
+            },
         };
     }
 
