@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-03
+
+### Breaking
+
+Read this section before upgrading from 0.5.0. The README has a
+[Migrating from 0.5.0](README.md#migrating-from-050) section with before/after code for each item.
+
+- `GkPolytope` and `GkSimplex` are now `internal`, along with the `OpenGjk` overloads that took
+  them. They exposed internal algorithm state - an undocumented `double[][]` coordinate layout and
+  settable counters that could break internal invariants - so code using them no longer compiles
+  (CS0122/CS0246). Vertex-array callers should use the `Vector3[]`/`Vector2[]` overloads; callers
+  who used them to avoid per-query allocation should use `GjkWorkspace`. This is the only
+  compile-time break; an API diff against 0.5.0 shows no other removal or signature change.
+- Four results change value without any compile error, all of them fixes to answers that were
+  wrong before. Check any code that depended on the old values (each has its own entry below):
+  - colliding bodies now report a minimum distance of exactly 0, where a small residual was left,
+  - the penetration depth of curved shapes is larger and no longer an underestimate,
+  - bodies whose interior points coincide report a depth instead of 0,
+  - flat pairs report a depth measured in the plane they share, instead of 0.
+- `netstandard2.0` consumers gain a `System.Memory` package dependency, needed by the new
+  `ReadOnlySpan<double>` overloads. This affects .NET Framework only; the other targets are
+  unchanged.
+
 ### Added
 
 - `TryGetPenetration`, an unsigned convenience overload for depenetration: it returns whether
@@ -87,11 +110,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   interior point and only affects convergence speed; witness points are meaningless while the
   bodies overlap (both collapse to a common interior point); the contact normal points from
   the first body toward the second and is arbitrary for concentric bodies.
-- **Breaking:** `GkPolytope` and `GkSimplex` are now `internal`, along with the
-  `OpenGjk` overloads that took them. They exposed internal algorithm state
-  (an undocumented `double[][]` coordinate layout and settable counters that could
-  break internal invariants). Vertex-array callers should use the `Vector3[]`/`Vector2[]`
-  overloads; callers who used them to avoid per-query allocation should use `GjkWorkspace`.
 - GJK/EPA internals no longer allocate temporaries per iteration (face normals, horizon
   edges, witness computation and the distance sub-algorithm now work on reused buffers).
 
@@ -174,7 +192,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: GJK minimum distance and `HasCollision` for convex polyhedra (`Vector3[]`) and flat polygons (`Vector2[]`)
 
-[Unreleased]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.2.0...v0.3.0
