@@ -307,6 +307,16 @@ Zero-thickness geometry is supported, through the shapes that take explicit poin
 polygon), and a custom `ISupportMappable` may describe any convex set. All of them, including
 two coincident points, are queried without special cases.
 
+Their penetration depth follows the rule above - the minimum translation within the plane or
+along the line the pair shares - which is worth a moment's thought for a degenerate pair:
+
+- A point inside a segment reports the distance to the *nearer end*, not 0: that is how far it
+  has to travel to leave the segment. Same for a point inside a flat polygon, which reports the
+  distance to the nearest edge.
+- A segment lying exactly on the edge of a flat polygon reports 0. The two do touch, but the
+  overlap has no area, so no translation is needed to separate them.
+- Two coincident points report 0, which is the same reasoning one dimension lower.
+
 #### Custom shapes
 
 Implementations must describe a convex shape, and `GetSupportPoint` must be exact for
