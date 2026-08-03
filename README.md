@@ -172,7 +172,33 @@ foreach (var (a, b) in pairs)
 Every `HasCollision`, `ComputeMinimumDistance`, and `ComputeCollisionInformation` overload
 has a workspace counterpart, for vertex arrays, 2D polygons, and `ISupportMappable` shapes
 alike. A workspace holds no result state, so it can be reused as soon as a query returns.
-It is **not thread-safe**: use one workspace per thread.
+
+It is **not thread-safe**: use one workspace per thread (a `[ThreadStatic]` field, or one per
+worker). Sharing one between concurrent queries would have them overwrite each other's buffers,
+so a query that finds its workspace already occupied throws `InvalidOperationException` instead
+of returning a wrong result:
+
+``` c#
+var shared = new GjkWorkspace();
+
+Parallel.ForEach(pairs, pair =>
+{
+    // Throws InvalidOperationException as soon as two queries overlap.
+    OpenGjk.ComputeMinimumDistance(pair.A, pair.B, shared);
+});
+
+// Correct: one workspace per worker.
+var perThread = new ThreadLocal<GjkWorkspace>(() => new GjkWorkspace());
+
+Parallel.ForEach(pairs, pair =>
+{
+    OpenGjk.ComputeMinimumDistance(pair.A, pair.B, perThread.Value!);
+});
+```
+
+The same check catches re-entering a query with the workspace it was called from - for example
+querying from inside a custom `GetSupportPoint`. A failed query releases its workspace, so the
+workspace stays usable after the exception.
 
 ### Shapes and custom support functions
 
@@ -296,7 +322,8 @@ foreach (var (a, b) in pairs)
 }
 ```
 
-A workspace must not be shared between threads - use one per thread (see
+A workspace must not be shared between threads; since 0.6.0 a query that finds its workspace
+already in use throws `InvalidOperationException` instead of quietly returning a wrong result (see
 [Reusing buffers in a query loop](#reusing-buffers-in-a-query-loop-gjkworkspace)).
 
 ### `CsFunction` callers

@@ -82,10 +82,18 @@ public static class OpenGjk
         ValidateWorkspace(workspace);
         ValidatePrecision(precision);
 
-        LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
-        double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+        workspace.Occupy();
+        try
+        {
+            LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
 
-        return distance <= precision;
+            return distance <= precision;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -118,10 +126,18 @@ public static class OpenGjk
         ValidateWorkspace(workspace);
         ValidatePrecision(precision);
 
-        LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
-        double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+        workspace.Occupy();
+        try
+        {
+            LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
 
-        return distance <= precision;
+            return distance <= precision;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -155,16 +171,24 @@ public static class OpenGjk
         ValidateVertices(a, b);
         ValidateWorkspace(workspace);
 
-        LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
-        GkSimplex simplex = workspace.Simplex;
+        workspace.Occupy();
+        try
+        {
+            LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            GkSimplex simplex = workspace.Simplex;
 
-        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+            double distance = ComputeMinimumDistance(bd1, bd2, simplex);
 
-        double[] normal = workspace.ContactNormal;
-        ComputeCollisionInformation(bd1, bd2, simplex, workspace.Epa, ref distance, normal);
+            double[] normal = workspace.ContactNormal;
+            ComputeCollisionInformation(bd1, bd2, simplex, workspace.Epa, ref distance, normal);
 
-        contactNormal = new Vector3((float)normal[0], (float)normal[1], (float)normal[2]);
-        return distance;
+            contactNormal = new Vector3((float)normal[0], (float)normal[1], (float)normal[2]);
+            return distance;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -227,20 +251,28 @@ public static class OpenGjk
         ValidateVertices(a, b);
         ValidateWorkspace(workspace);
 
-        LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
-        GkSimplex simplex = workspace.Simplex;
-        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+        workspace.Occupy();
+        try
+        {
+            LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            GkSimplex simplex = workspace.Simplex;
+            double distance = ComputeMinimumDistance(bd1, bd2, simplex);
 
-        closestA = new Vector3(
-            (float)simplex.Witnesses[0, 0],
-            (float)simplex.Witnesses[0, 1],
-            (float)simplex.Witnesses[0, 2]);
-        closestB = new Vector3(
-            (float)simplex.Witnesses[1, 0],
-            (float)simplex.Witnesses[1, 1],
-            (float)simplex.Witnesses[1, 2]);
+            closestA = new Vector3(
+                (float)simplex.Witnesses[0, 0],
+                (float)simplex.Witnesses[0, 1],
+                (float)simplex.Witnesses[0, 2]);
+            closestB = new Vector3(
+                (float)simplex.Witnesses[1, 0],
+                (float)simplex.Witnesses[1, 1],
+                (float)simplex.Witnesses[1, 2]);
 
-        return distance;
+            return distance;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -306,18 +338,26 @@ public static class OpenGjk
         ValidateVertices(a, b);
         ValidateWorkspace(workspace);
 
-        LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
-        GkSimplex simplex = workspace.Simplex;
-        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+        workspace.Occupy();
+        try
+        {
+            LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            GkSimplex simplex = workspace.Simplex;
+            double distance = ComputeMinimumDistance(bd1, bd2, simplex);
 
-        closestA = new Vector2(
-            (float)simplex.Witnesses[0, 0],
-            (float)simplex.Witnesses[0, 1]);
-        closestB = new Vector2(
-            (float)simplex.Witnesses[1, 0],
-            (float)simplex.Witnesses[1, 1]);
+            closestA = new Vector2(
+                (float)simplex.Witnesses[0, 0],
+                (float)simplex.Witnesses[0, 1]);
+            closestB = new Vector2(
+                (float)simplex.Witnesses[1, 0],
+                (float)simplex.Witnesses[1, 1]);
 
-        return distance;
+            return distance;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -352,10 +392,18 @@ public static class OpenGjk
         ValidateWorkspace(workspace);
         ValidatePrecision(precision);
 
-        LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
-        double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+        workspace.Occupy();
+        try
+        {
+            LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
 
-        return distance <= precision;
+            return distance <= precision;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -387,9 +435,17 @@ public static class OpenGjk
         ValidateCoordinates(a, b);
         ValidateWorkspace(workspace);
 
-        LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
+        workspace.Occupy();
+        try
+        {
+            LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
 
-        return ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+            return ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -433,17 +489,25 @@ public static class OpenGjk
         ValidateOutput(closestA, nameof(closestA));
         ValidateOutput(closestB, nameof(closestB));
 
-        LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
-        GkSimplex simplex = workspace.Simplex;
-        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
-
-        for (int t = 0; t < 3; t++)
+        workspace.Occupy();
+        try
         {
-            closestA[t] = simplex.Witnesses[0, t];
-            closestB[t] = simplex.Witnesses[1, t];
-        }
+            LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            GkSimplex simplex = workspace.Simplex;
+            double distance = ComputeMinimumDistance(bd1, bd2, simplex);
 
-        return distance;
+            for (int t = 0; t < 3; t++)
+            {
+                closestA[t] = simplex.Witnesses[0, t];
+                closestB[t] = simplex.Witnesses[1, t];
+            }
+
+            return distance;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -483,20 +547,28 @@ public static class OpenGjk
         ValidateWorkspace(workspace);
         ValidateOutput(contactNormal, nameof(contactNormal));
 
-        LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
-        GkSimplex simplex = workspace.Simplex;
-
-        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
-
-        double[] normal = workspace.ContactNormal;
-        ComputeCollisionInformation(bd1, bd2, simplex, workspace.Epa, ref distance, normal);
-
-        for (int t = 0; t < 3; t++)
+        workspace.Occupy();
+        try
         {
-            contactNormal[t] = normal[t];
-        }
+            LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            GkSimplex simplex = workspace.Simplex;
 
-        return distance;
+            double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+
+            double[] normal = workspace.ContactNormal;
+            ComputeCollisionInformation(bd1, bd2, simplex, workspace.Epa, ref distance, normal);
+
+            for (int t = 0; t < 3; t++)
+            {
+                contactNormal[t] = normal[t];
+            }
+
+            return distance;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -530,10 +602,18 @@ public static class OpenGjk
         ValidateWorkspace(workspace);
         ValidatePrecision(precision);
 
-        workspace.LoadShapes(a, b, out GkBody bd1, out GkBody bd2);
-        double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+        workspace.Occupy();
+        try
+        {
+            workspace.LoadShapes(a, b, out GkBody bd1, out GkBody bd2);
+            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
 
-        return distance <= precision;
+            return distance <= precision;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -598,20 +678,28 @@ public static class OpenGjk
         ValidateShapes(a, b);
         ValidateWorkspace(workspace);
 
-        workspace.LoadShapes(a, b, out GkBody bd1, out GkBody bd2);
-        GkSimplex simplex = workspace.Simplex;
-        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+        workspace.Occupy();
+        try
+        {
+            workspace.LoadShapes(a, b, out GkBody bd1, out GkBody bd2);
+            GkSimplex simplex = workspace.Simplex;
+            double distance = ComputeMinimumDistance(bd1, bd2, simplex);
 
-        closestA = new Vector3(
-            (float)simplex.Witnesses[0, 0],
-            (float)simplex.Witnesses[0, 1],
-            (float)simplex.Witnesses[0, 2]);
-        closestB = new Vector3(
-            (float)simplex.Witnesses[1, 0],
-            (float)simplex.Witnesses[1, 1],
-            (float)simplex.Witnesses[1, 2]);
+            closestA = new Vector3(
+                (float)simplex.Witnesses[0, 0],
+                (float)simplex.Witnesses[0, 1],
+                (float)simplex.Witnesses[0, 2]);
+            closestB = new Vector3(
+                (float)simplex.Witnesses[1, 0],
+                (float)simplex.Witnesses[1, 1],
+                (float)simplex.Witnesses[1, 2]);
 
-        return distance;
+            return distance;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -646,18 +734,26 @@ public static class OpenGjk
         ValidateShapes(a, b);
         ValidateWorkspace(workspace);
 
-        // The same body instances must serve both the GJK and EPA passes:
-        // the simplex records ids into each body's point store.
-        workspace.LoadShapes(a, b, out GkBody bd1, out GkBody bd2);
-        GkSimplex simplex = workspace.Simplex;
+        workspace.Occupy();
+        try
+        {
+            // The same body instances must serve both the GJK and EPA passes:
+            // the simplex records ids into each body's point store.
+            workspace.LoadShapes(a, b, out GkBody bd1, out GkBody bd2);
+            GkSimplex simplex = workspace.Simplex;
 
-        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+            double distance = ComputeMinimumDistance(bd1, bd2, simplex);
 
-        double[] normal = workspace.ContactNormal;
-        ComputeCollisionInformation(bd1, bd2, simplex, workspace.Epa, ref distance, normal);
+            double[] normal = workspace.ContactNormal;
+            ComputeCollisionInformation(bd1, bd2, simplex, workspace.Epa, ref distance, normal);
 
-        contactNormal = new Vector3((float)normal[0], (float)normal[1], (float)normal[2]);
-        return distance;
+            contactNormal = new Vector3((float)normal[0], (float)normal[1], (float)normal[2]);
+            return distance;
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>

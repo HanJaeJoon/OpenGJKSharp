@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously a support-mapped query allocated about 4 KB, and a colliding query
   about 150 KB for the EPA pass.
 
+- A `GjkWorkspace` now detects being used by two queries at once and throws
+  `InvalidOperationException` naming the mistake, instead of letting the queries overwrite each
+  other's buffers. Sharing one workspace across threads used to either throw
+  `IndexOutOfRangeException` from deep inside the library or, more often, return silently wrong
+  results (3618 of 4000 queries in a parallel probe). Re-entering a query with the workspace it
+  was called from - for example querying from a custom `GetSupportPoint` - is caught by the same
+  check. A failing query releases its workspace, so it stays usable afterwards. Allocation-free
+  reuse is unaffected (still 0 B/query) and the added cost is below measurement noise.
+
 ### Fixed
 
 - Penetration depth is now reported for bodies whose interior points coincide - concentric

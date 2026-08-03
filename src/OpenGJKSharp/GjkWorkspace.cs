@@ -21,6 +21,11 @@ namespace OpenGJKSharp;
 /// <para>
 /// Instances are <b>not thread-safe</b> and must not be shared by concurrent queries.
 /// Use one workspace per thread (for example a <c>[ThreadStatic]</c> field or one per worker).
+/// A query that finds the workspace already occupied throws <see cref="InvalidOperationException"/>
+/// rather than reading and writing the buffers underneath the query that owns them, so sharing one
+/// by mistake fails loudly instead of returning wrong results. The same check catches re-entering a
+/// query with the workspace it was called from, for example from a custom
+/// <see cref="ISupportMappable.GetSupportPoint"/>.
 /// </para>
 /// <example>
 /// <code>
@@ -35,6 +40,7 @@ namespace OpenGJKSharp;
 public sealed class GjkWorkspace
 {
     private EpaPolytope? _epa;
+    private int _inUse;
 
     /// <summary>
     /// Creates an empty workspace. Buffers are allocated on first use and grow as needed.
@@ -62,6 +68,30 @@ public sealed class GjkWorkspace
 
     /// <summary>EPA buffers, created on the first colliding query.</summary>
     internal EpaPolytope Epa => _epa ??= new EpaPolytope();
+
+    /// <summary>
+    /// Takes exclusive ownership of the buffers for the duration of one query.
+    /// Every query that touches the workspace must pair this with <see cref="Release"/>
+    /// in a <c>finally</c> block, so a failing query does not leave it occupied.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Another query already owns the workspace.</exception>
+    internal void Occupy()
+    {
+        if (Interlocked.CompareExchange(ref _inUse, 1, 0) != 0)
+        {
+            throw new InvalidOperationException(
+                "This GjkWorkspace is already in use by another query. A GjkWorkspace is not " +
+                "thread-safe: use one per thread instead of sharing one across threads, and do not " +
+                "start a query with the workspace of a query that is still running (for example " +
+                "from inside a custom GetSupportPoint).");
+        }
+    }
+
+    /// <summary>Releases the ownership taken by <see cref="Occupy"/>.</summary>
+    internal void Release()
+    {
+        Volatile.Write(ref _inUse, 0);
+    }
 
     /// <summary>Binds both vertex-cloud bodies to the workspace polytopes and returns them.</summary>
     internal void LoadPolytopes(out GkBody bodyA, out GkBody bodyB)
