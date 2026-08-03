@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The obsolete `CsFunction` used to be the only double-precision entry point; these
   overloads replace it with the full result set. Adds a `System.Memory` dependency
   on `netstandard2.0` only.
+- Penetration depth for flat pairs, computed in the plane the two bodies share. EPA needs a
+  tetrahedron, which a flat Minkowski difference has no room for, so coplanar bodies reported a
+  depth of 0 - two unit squares overlapping by 0.25 in the z = 0 plane came back as if they were
+  merely touching. Coplanar bodies now run a two-dimensional expanding-polygon pass instead, and
+  bodies on a common line the one-dimensional equivalent. This covers `Vector2[]` polygons, and
+  also `Vector3[]` vertices and flat `ConvexHull` shapes that happen to share a plane.
+- `ComputeCollisionInformation` and `TryGetPenetration` overloads for `Vector2[]` polygons, each
+  with a `GjkWorkspace` variant, returning the depth and a `Vector2` contact normal in the plane.
+  Previously the 2D API stopped at `HasCollision` and `ComputeMinimumDistance`.
 - `TransformedShape`: places any `ISupportMappable` at a pose (rotation + translation),
   so a shape can be defined once in local space and moved with `SetPose` instead of being
   rebuilt every frame. Previously only `Box` accepted an orientation, and moving a
@@ -60,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A flat pair of bodies now reports the penetration depth measured in the plane they share,
+  where it used to report 0. Measured in three dimensions 0 is the honest answer - a flat pair
+  separates when either body leaves the plane by any amount - but it is useless to a caller
+  working with flat geometry and indistinguishable from "not colliding". The consequence is a
+  discontinuity in thickness: a pair 1e-6 thick is genuinely three-dimensional and still reports
+  its out-of-plane depth of 1e-6, while the same pair at thickness 0 reports the in-plane depth.
 - Colliding bodies now report a minimum distance of exactly 0. The iteration used to leave a
   residual (about 1e-16 at unit scale, larger for bigger bodies), so `distance == 0` missed
   collisions; the residual is now measured against the size of the bodies and flushed to zero.

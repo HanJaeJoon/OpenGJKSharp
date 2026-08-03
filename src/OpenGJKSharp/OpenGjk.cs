@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using OpenGJKSharp.Models;
 using System.Numerics;
 
@@ -189,6 +189,101 @@ public static class OpenGjk
         {
             workspace.Release();
         }
+    }
+
+    /// <summary>
+    /// Computes collision information between two convex 2D polygons
+    /// (treated as flat shapes on the z = 0 plane).
+    /// Returns the minimum distance when the polygons are separated (positive value),
+    /// or the penetration depth computed by the EPA algorithm when they collide (negative value).
+    /// </summary>
+    /// <param name="a">Vertices of the first polygon.</param>
+    /// <param name="b">Vertices of the second polygon.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first polygon toward the second.</param>
+    /// <returns>Positive separation distance, or negative penetration depth on collision.</returns>
+    /// <remarks>
+    /// The depth and the normal are measured in the plane of the polygons, which is the whole
+    /// problem for a 2D pair.
+    /// </remarks>
+    public static double ComputeCollisionInformation(Vector2[] a, Vector2[] b, out Vector2 contactNormal)
+    {
+        return ComputeCollisionInformation(a, b, new GjkWorkspace(), out contactNormal);
+    }
+
+    /// <summary>
+    /// Computes collision information between two convex 2D polygons
+    /// (treated as flat shapes on the z = 0 plane),
+    /// reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// Returns the minimum distance when the polygons are separated (positive value),
+    /// or the penetration depth computed by the EPA algorithm when they collide (negative value).
+    /// </summary>
+    /// <param name="a">Vertices of the first polygon.</param>
+    /// <param name="b">Vertices of the second polygon.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first polygon toward the second.</param>
+    /// <returns>Positive separation distance, or negative penetration depth on collision.</returns>
+    /// <inheritdoc cref="ComputeCollisionInformation(Vector2[], Vector2[], out Vector2)" path="/remarks"/>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    public static double ComputeCollisionInformation(Vector2[] a, Vector2[] b, GjkWorkspace workspace,
+        out Vector2 contactNormal)
+    {
+        ValidateVertices(a, b);
+        ValidateWorkspace(workspace);
+
+        workspace.Occupy();
+        try
+        {
+            LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            GkSimplex simplex = workspace.Simplex;
+
+            double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+
+            double[] normal = workspace.ContactNormal;
+            ComputeCollisionInformation(bd1, bd2, simplex, workspace.Epa, ref distance, normal);
+
+            contactNormal = new Vector2((float)normal[0], (float)normal[1]);
+            return distance;
+        }
+        finally
+        {
+            workspace.Release();
+        }
+    }
+
+    /// <summary>
+    /// Determines whether two convex 2D polygons (treated as flat shapes on the z = 0 plane)
+    /// collide and, if so, by how much.
+    /// </summary>
+    /// <param name="a">Vertices of the first polygon.</param>
+    /// <param name="b">Vertices of the second polygon.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the polygons are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first polygon toward the second.</param>
+    /// <returns><c>true</c> when the polygons overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3)" path="/remarks"/>
+    public static bool TryGetPenetration(Vector2[] a, Vector2[] b, out double depth, out Vector2 contactNormal)
+    {
+        return TryGetPenetration(a, b, new GjkWorkspace(), out depth, out contactNormal);
+    }
+
+    /// <summary>
+    /// Determines whether two convex 2D polygons (treated as flat shapes on the z = 0 plane)
+    /// collide and, if so, by how much, reusing the buffers of <paramref name="workspace"/>
+    /// instead of allocating them.
+    /// </summary>
+    /// <param name="a">Vertices of the first polygon.</param>
+    /// <param name="b">Vertices of the second polygon.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the polygons are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first polygon toward the second.</param>
+    /// <returns><c>true</c> when the polygons overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    public static bool TryGetPenetration(Vector2[] a, Vector2[] b, GjkWorkspace workspace,
+        out double depth, out Vector2 contactNormal)
+    {
+        double info = ComputeCollisionInformation(a, b, workspace, out contactNormal);
+
+        return ToPenetration(info, out depth);
     }
 
     /// <summary>
@@ -2612,242 +2707,17 @@ public static class OpenGjk
             return;
         }
 
-        // If GJK returned a degenerate simplex, rebuild it properly for EPA
-        if (simplex.NVrtx != 4)
+        // GJK can stop with fewer than four simplex vertices, or with four that enclose no
+        // volume, and EPA needs a real tetrahedron. Growing the simplex with support queries
+        // also establishes how many dimensions the Minkowski difference actually has: when it
+        // cannot be grown any further, that is proof the difference is flat or thinner rather
+        // than a failure to find a point.
+        int dimension = PrepareEpaSimplex(bd1, bd2, simplex, poly);
+        if (dimension < 4)
         {
-            if (simplex.NVrtx == 1)
-            {
-                // Grow simplex from a single point: fire a support in some direction.
-                // We use current simplex point for new direction for the
-                // support; if this does not produce a new point, treat penetration as 0.
-                double[] dir = poly.Direction;
-                dir[0] = simplex.Vrtx[0, 0];
-                dir[1] = simplex.Vrtx[0, 1];
-                dir[2] = simplex.Vrtx[0, 2];
-                if (Norm2(dir) < epsSq)
-                {
-                    // Zero initial direction (e.g. both bodies share their first vertex):
-                    // fall back to an arbitrary axis so the simplex can still grow.
-                    dir[0] = 1.0;
-                    dir[1] = 0.0;
-                    dir[2] = 0.0;
-                }
-
-                SupportEpa(bd1, bd2, poly, dir, newVertex, newVertexIdx);
-
-                // Check if this is a new point relative to the existing simplex vertex.
-                double dx = newVertex[0] - simplex.Vrtx[0, 0];
-                double dy = newVertex[1] - simplex.Vrtx[0, 1];
-                double dz = newVertex[2] - simplex.Vrtx[0, 2];
-                bool isNew = dx * dx + dy * dy + dz * dz >= epsSq;
-
-                if (isNew)
-                {
-                    int idx = simplex.NVrtx;
-                    for (int c = 0; c < 3; ++c)
-                    {
-                        simplex.Vrtx[idx, c] = newVertex[c];
-                    }
-                    simplex.VrtxIdx[idx, 0] = newVertexIdx[0];
-                    simplex.VrtxIdx[idx, 1] = newVertexIdx[1];
-                    simplex.NVrtx = 2;
-                }
-                else
-                {
-                    // No new support point means penetration depth effectively zero.
-                    distance = 0;
-                    for (int c = 0; c < 3; ++c)
-                    {
-                        simplex.Witnesses[0, c] = bd1.GetPoint(newVertexIdx[0])[c];
-                        simplex.Witnesses[1, c] = bd2.GetPoint(newVertexIdx[1])[c];
-                    }
-                    SetContactNormal(simplex, contactNormal);
-                    return;
-                }
-            }
-            if (simplex.NVrtx == 2)
-            {
-                // Grow simplex from an edge: fire a support in a direction perpendicular
-                // to the edge. If this does not produce a new point, treat penetration as 0.
-                double[] dir = poly.Direction;
-                double[] edge = poly.TempA;
-
-                for (int c = 0; c < 3; ++c)
-                {
-                    edge[c] = simplex.Vrtx[1, c] - simplex.Vrtx[0, c];
-                }
-
-                // Build a perpendicular
-                double[] axis = poly.TempB;
-                axis[0] = 1.0;
-                axis[1] = 0.0;
-                axis[2] = 0.0;
-                double edgeNorm = Math.Sqrt(Norm2(edge));
-                if (edgeNorm > _gkEpsilon && Math.Abs(edge[0]) > 0.9 * edgeNorm)
-                {
-                    axis[0] = 0.0;
-                    axis[1] = 1.0;
-                    axis[2] = 0.0;
-                }
-
-                // dir = edge x axis
-                CrossProduct(edge, axis, dir);
-                if (Norm2(dir) < _gkEpsilon)
-                {
-                    // Fallback axis
-                    axis[0] = 0.0;
-                    axis[1] = 0.0;
-                    axis[2] = 1.0;
-                    CrossProduct(edge, axis, dir);
-                }
-
-                SupportEpa(bd1, bd2, poly, dir, newVertex, newVertexIdx);
-
-                // Check if this is a new point relative to both existing simplex vertices.
-                bool isNew = true;
-                for (int vtx = 0; vtx < simplex.NVrtx; ++vtx)
-                {
-                    double dx = newVertex[0] - simplex.Vrtx[vtx, 0];
-                    double dy = newVertex[1] - simplex.Vrtx[vtx, 1];
-                    double dz = newVertex[2] - simplex.Vrtx[vtx, 2];
-                    if (dx * dx + dy * dy + dz * dz < epsSq)
-                    {
-                        isNew = false;
-                        break;
-                    }
-                }
-
-                if (isNew)
-                {
-                    int idx = simplex.NVrtx;
-                    for (int c = 0; c < 3; ++c)
-                    {
-                        simplex.Vrtx[idx, c] = newVertex[c];
-                    }
-                    simplex.VrtxIdx[idx, 0] = newVertexIdx[0];
-                    simplex.VrtxIdx[idx, 1] = newVertexIdx[1];
-                    simplex.NVrtx = 3;
-                }
-                else
-                {
-                    // No new support point means penetration depth effectively zero.
-                    distance = 0;
-                    for (int c = 0; c < 3; ++c)
-                    {
-                        simplex.Witnesses[0, c] = bd1.GetPoint(newVertexIdx[0])[c];
-                        simplex.Witnesses[1, c] = bd2.GetPoint(newVertexIdx[1])[c];
-                    }
-                    SetContactNormal(simplex, contactNormal);
-                    return;
-                }
-            }
-            if (simplex.NVrtx == 3)
-            {
-                // Grow simplex from a triangle: fire a support in the direction of the
-                // triangle normal. If this does not produce a new point, treat penetration as 0.
-                double[] dir = poly.Direction;
-                double[] e0 = poly.TempA;
-                double[] e1 = poly.TempB;
-
-                for (int c = 0; c < 3; ++c)
-                {
-                    e0[c] = simplex.Vrtx[1, c] - simplex.Vrtx[0, c];
-                    e1[c] = simplex.Vrtx[2, c] - simplex.Vrtx[0, c];
-                }
-                // dir = e0 x e1 (normal to the triangle)
-                CrossProduct(e0, e1, dir);
-
-                SupportEpa(bd1, bd2, poly, dir, newVertex, newVertexIdx);
-
-                // Check if this is a new point relative to all three existing simplex vertices.
-                bool isNew = true;
-                for (int vtx = 0; vtx < simplex.NVrtx; ++vtx)
-                {
-                    double dx = newVertex[0] - simplex.Vrtx[vtx, 0];
-                    double dy = newVertex[1] - simplex.Vrtx[vtx, 1];
-                    double dz = newVertex[2] - simplex.Vrtx[vtx, 2];
-                    if (dx * dx + dy * dy + dz * dz < epsSq)
-                    {
-                        isNew = false;
-                        break;
-                    }
-                }
-
-                if (isNew)
-                {
-                    int idx = simplex.NVrtx;
-                    for (int c = 0; c < 3; ++c)
-                    {
-                        simplex.Vrtx[idx, c] = newVertex[c];
-                    }
-                    simplex.VrtxIdx[idx, 0] = newVertexIdx[0];
-                    simplex.VrtxIdx[idx, 1] = newVertexIdx[1];
-                    simplex.NVrtx = 4;
-                }
-                else
-                {
-                    // Try opposite direction
-                    dir[0] = -dir[0];
-                    dir[1] = -dir[1];
-                    dir[2] = -dir[2];
-                }
-
-                // If first direction didn't work, try opposite
-                if (simplex.NVrtx == 3)
-                {
-                    SupportEpa(bd1, bd2, poly, dir, newVertex, newVertexIdx);
-                    isNew = true;
-                    for (int vtx = 0; vtx < simplex.NVrtx; ++vtx)
-                    {
-                        double dx = newVertex[0] - simplex.Vrtx[vtx, 0];
-                        double dy = newVertex[1] - simplex.Vrtx[vtx, 1];
-                        double dz = newVertex[2] - simplex.Vrtx[vtx, 2];
-                        if (dx * dx + dy * dy + dz * dz < epsSq)
-                        {
-                            isNew = false;
-                            break;
-                        }
-                    }
-
-                    if (isNew)
-                    {
-                        int idx = simplex.NVrtx;
-                        for (int c = 0; c < 3; ++c)
-                        {
-                            simplex.Vrtx[idx, c] = newVertex[c];
-                        }
-                        simplex.VrtxIdx[idx, 0] = newVertexIdx[0];
-                        simplex.VrtxIdx[idx, 1] = newVertexIdx[1];
-                        simplex.NVrtx = 4;
-                    }
-                    else
-                    {
-                        distance = 0;
-                        for (int c = 0; c < 3; ++c)
-                        {
-                            simplex.Witnesses[0, c] = bd1.GetPoint(newVertexIdx[0])[c];
-                            simplex.Witnesses[1, c] = bd2.GetPoint(newVertexIdx[1])[c];
-                        }
-                        SetContactNormal(simplex, contactNormal);
-                        return;
-                    }
-                }
-            }
-
-            // If we still don't have 4 vertices, abort
-            if (simplex.NVrtx != 4)
-            {
-                distance = 0;
-                // Set witness points from best available simplex vertex
-                int best = simplex.NVrtx > 0 ? simplex.NVrtx - 1 : 0;
-                for (int c = 0; c < 3; ++c)
-                {
-                    simplex.Witnesses[0, c] = bd1.GetPoint(simplex.VrtxIdx[best, 0])[c];
-                    simplex.Witnesses[1, c] = bd2.GetPoint(simplex.VrtxIdx[best, 1])[c];
-                }
-                SetContactNormal(simplex, contactNormal);
-                return;
-            }
+            ComputeDegenerateCollisionInformation(bd1, bd2, simplex, poly, dimension,
+                ref distance, contactNormal);
+            return;
         }
 
         // On to actual EPA alg with a valid tetrahedron simplex
@@ -3145,6 +3015,619 @@ public static class OpenGjk
 
     // Remembers a face and the support-plane distance along its normal, so the result can be
     // built from it after later iterations have recycled its face slot.
+    // Relative tolerances for the affine independence tests below. A new simplex vertex must
+    // add a dimension by a wide enough margin that rounding cannot be mistaken for extent, and
+    // by a small enough one that genuinely thin geometry still counts as three-dimensional:
+    // a pair 1e-6 thick at unit scale is six orders of magnitude above these.
+    private const double _sinTolerance = 1e-12;
+    private const double _planeTolerance = 1e-12;
+
+    // Makes the simplex an affinely independent set and grows it toward a tetrahedron with
+    // support queries, returning the number of vertices reached. That number is the dimension
+    // of the affine hull of the Minkowski difference: a stage that cannot be grown proves the
+    // difference has no extent in the missing direction, since support queries in both
+    // directions along it return points the simplex already has.
+    //
+    // GJK's own simplex cannot be trusted for this. Two unit squares overlapping in the z = 0
+    // plane leave three *collinear* vertices on the x axis even though their difference is a
+    // two-dimensional polygon, and a normal taken from those three points is meaningless.
+    private static int PrepareEpaSimplex(GkBody bd1, GkBody bd2, GkSimplex simplex, EpaPolytope poly)
+    {
+        // Drop vertices that add no dimension (duplicates, collinear triples, coplanar quads).
+        int count = 0;
+        for (int vtx = 0; vtx < simplex.NVrtx; ++vtx)
+        {
+            if (!AddsDimension(simplex, count, simplex.Vrtx[vtx, 0], simplex.Vrtx[vtx, 1], simplex.Vrtx[vtx, 2]))
+            {
+                continue;
+            }
+
+            if (count != vtx)
+            {
+                for (int c = 0; c < 3; ++c)
+                {
+                    simplex.Vrtx[count, c] = simplex.Vrtx[vtx, c];
+                }
+
+                simplex.VrtxIdx[count, 0] = simplex.VrtxIdx[vtx, 0];
+                simplex.VrtxIdx[count, 1] = simplex.VrtxIdx[vtx, 1];
+            }
+
+            count++;
+        }
+
+        simplex.NVrtx = count;
+
+        while (count is > 0 and < 4 && TryGrowSimplex(bd1, bd2, simplex, poly, count))
+        {
+            count++;
+            simplex.NVrtx = count;
+        }
+
+        return count;
+    }
+
+    // Fires support queries along directions that would leave the current simplex's affine hull
+    // and appends the first point that does. Returns false when no direction produces one.
+    private static bool TryGrowSimplex(GkBody bd1, GkBody bd2, GkSimplex simplex,
+        EpaPolytope poly, int count)
+    {
+        double[] direction = poly.Direction;
+        double[] newVertex = poly.NewVertex;
+        int[] newVertexIdx = poly.NewVertexIdx;
+
+        // Up to four candidate directions, all perpendicular to the current hull so that a
+        // point beyond it is the one thing they can find.
+        int candidates = SetupGrowthDirections(simplex, poly, count);
+
+        for (int candidate = 0; candidate < candidates; ++candidate)
+        {
+            SelectGrowthDirection(poly, candidate, direction);
+            if (Norm2(direction) <= _gkEpsilon * _gkEpsilon)
+            {
+                continue;
+            }
+
+            SupportEpa(bd1, bd2, poly, direction, newVertex, newVertexIdx);
+
+            if (!AddsDimension(simplex, count, newVertex[0], newVertex[1], newVertex[2]))
+            {
+                continue;
+            }
+
+            for (int c = 0; c < 3; ++c)
+            {
+                simplex.Vrtx[count, c] = newVertex[c];
+            }
+
+            simplex.VrtxIdx[count, 0] = newVertexIdx[0];
+            simplex.VrtxIdx[count, 1] = newVertexIdx[1];
+
+            return true;
+        }
+
+        return false;
+    }
+
+    // Fills the growth direction pair (and its negatives) for the current simplex size and
+    // returns how many candidates that makes.
+    private static int SetupGrowthDirections(GkSimplex simplex, EpaPolytope poly, int count)
+    {
+        double[] first = poly.TempA;
+        double[] second = poly.TempB;
+
+        if (count == 1)
+        {
+            // Any direction can find a second point; the vertex itself points away from the
+            // origin, which is where the difference has extent if it has any.
+            first[0] = simplex.Vrtx[0, 0];
+            first[1] = simplex.Vrtx[0, 1];
+            first[2] = simplex.Vrtx[0, 2];
+
+            if (Norm2(first) <= _gkEpsilon * _gkEpsilon)
+            {
+                first[0] = 1;
+                first[1] = 0;
+                first[2] = 0;
+            }
+
+            second[0] = 0;
+            second[1] = 1;
+            second[2] = 0;
+
+            return 4;
+        }
+
+        double[] edge = poly.TempC;
+        for (int c = 0; c < 3; ++c)
+        {
+            edge[c] = simplex.Vrtx[1, c] - simplex.Vrtx[0, c];
+        }
+
+        if (count == 2)
+        {
+            // Two independent perpendiculars of the edge: a point off the line has to have a
+            // component along one of them.
+            double edgeNorm = Math.Sqrt(Norm2(edge));
+            double[] axis = poly.PlaneNormal;
+            axis[0] = 1;
+            axis[1] = 0;
+            axis[2] = 0;
+            if (edgeNorm > _gkEpsilon && Math.Abs(edge[0]) > 0.9 * edgeNorm)
+            {
+                axis[0] = 0;
+                axis[1] = 1;
+                axis[2] = 0;
+            }
+
+            CrossProduct(edge, axis, first);
+            CrossProduct(edge, first, second);
+
+            return 4;
+        }
+
+        // Three vertices: the only direction left is the triangle normal.
+        double[] other = poly.PlaneNormal;
+        for (int c = 0; c < 3; ++c)
+        {
+            other[c] = simplex.Vrtx[2, c] - simplex.Vrtx[0, c];
+        }
+
+        CrossProduct(edge, other, first);
+        second[0] = 0;
+        second[1] = 0;
+        second[2] = 0;
+
+        return 2;
+    }
+
+    // Candidates alternate between the two directions and their negatives.
+    private static void SelectGrowthDirection(EpaPolytope poly, int candidate, double[] direction)
+    {
+        double[] source = candidate < 2 ? poly.TempA : poly.TempB;
+        double sign = candidate % 2 == 0 ? 1 : -1;
+
+        for (int c = 0; c < 3; ++c)
+        {
+            direction[c] = source[c] * sign;
+        }
+    }
+
+    // Whether a point extends the affine hull of the first <paramref name="count"/> simplex
+    // vertices, and so may be appended as vertex number <paramref name="count"/>.
+    private static bool AddsDimension(GkSimplex simplex, int count, double x, double y, double z)
+    {
+        if (count == 0)
+        {
+            return true;
+        }
+
+        double e0X = x - simplex.Vrtx[0, 0];
+        double e0Y = y - simplex.Vrtx[0, 1];
+        double e0Z = z - simplex.Vrtx[0, 2];
+        double e0Sq = Norm2(e0X, e0Y, e0Z);
+
+        if (count == 1)
+        {
+            return e0Sq > _gkEpsilon * _gkEpsilon;
+        }
+
+        double aX = simplex.Vrtx[1, 0] - simplex.Vrtx[0, 0];
+        double aY = simplex.Vrtx[1, 1] - simplex.Vrtx[0, 1];
+        double aZ = simplex.Vrtx[1, 2] - simplex.Vrtx[0, 2];
+        double aSq = Norm2(aX, aY, aZ);
+
+        Cross(aX, aY, aZ, e0X, e0Y, e0Z, out double nX, out double nY, out double nZ);
+
+        if (count == 2)
+        {
+            // |a x e| = |a| |e| sin(angle), so testing against the product of the lengths
+            // tests the angle rather than an area, which would depend on the size of the bodies.
+            return Norm2(nX, nY, nZ) > aSq * e0Sq * (_sinTolerance * _sinTolerance);
+        }
+
+        double bX = simplex.Vrtx[2, 0] - simplex.Vrtx[0, 0];
+        double bY = simplex.Vrtx[2, 1] - simplex.Vrtx[0, 1];
+        double bZ = simplex.Vrtx[2, 2] - simplex.Vrtx[0, 2];
+
+        Cross(aX, aY, aZ, bX, bY, bZ, out double pX, out double pY, out double pZ);
+        double planeNorm = Math.Sqrt(Norm2(pX, pY, pZ));
+        if (planeNorm <= 0)
+        {
+            return false;
+        }
+
+        // Distance from the triangle's plane, relative to the size of the triangle.
+        double height = Math.Abs((pX * e0X) + (pY * e0Y) + (pZ * e0Z)) / planeNorm;
+        double scaleSq = aSq > Norm2(bX, bY, bZ) ? aSq : Norm2(bX, bY, bZ);
+
+        return height > Math.Sqrt(scaleSq) * _planeTolerance;
+    }
+
+    private static void Cross(double aX, double aY, double aZ, double bX, double bY, double bZ,
+        out double x, out double y, out double z)
+    {
+        x = (aY * bZ) - (aZ * bY);
+        y = (aZ * bX) - (aX * bZ);
+        z = (aX * bY) - (aY * bX);
+    }
+
+    // Reached when the Minkowski difference has no volume: EPA proved that support queries in
+    // the missing direction return points the simplex already has, so the difference is a flat
+    // polygon (dimension 3 vertices), a segment (2), or a single point (1).
+    //
+    // Such a difference has the origin on its boundary, so the penetration depth measured in 3D
+    // is 0 - moving the bodies apart perpendicular to the plane separates them by any amount.
+    // That is useless to a caller working with flat geometry, who wants the minimum translation
+    // *within* the plane, so that is what is reported. Note the discontinuity this creates: a
+    // pair with a small but non-zero thickness is not degenerate, keeps the 3D path, and gets
+    // its (smaller) out-of-plane depth.
+    private static void ComputeDegenerateCollisionInformation(GkBody bd1, GkBody bd2,
+        GkSimplex simplex, EpaPolytope poly, int dimension, ref double distance, double[] contactNormal)
+    {
+        poly.BestDepth = double.MaxValue;
+
+        if (dimension >= 3)
+        {
+            double[] e0 = poly.TempA;
+            double[] e1 = poly.TempB;
+            for (int c = 0; c < 3; ++c)
+            {
+                e0[c] = simplex.Vrtx[1, c] - simplex.Vrtx[0, c];
+                e1[c] = simplex.Vrtx[2, c] - simplex.Vrtx[0, c];
+            }
+
+            CrossProduct(e0, e1, poly.PlaneNormal);
+            ExpandPlanarPolygon(bd1, bd2, simplex, poly, ref distance, contactNormal);
+            return;
+        }
+
+        if (dimension == 2)
+        {
+            ExpandAlongLine(bd1, bd2, simplex, poly, ref distance, contactNormal);
+            return;
+        }
+
+        // A single point: the bodies touch at one point and 0 is the honest depth.
+        for (int c = 0; c < 3; ++c)
+        {
+            simplex.Witnesses[0, c] = bd1.GetPoint(simplex.VrtxIdx[0, 0])[c];
+            simplex.Witnesses[1, c] = bd2.GetPoint(simplex.VrtxIdx[0, 1])[c];
+        }
+
+        distance = 0;
+        SetContactNormal(simplex, contactNormal);
+    }
+
+    // Depth of a pair whose Minkowski difference is a segment through the origin: the origin
+    // leaves it at one end or the other, so the depth is the distance to the nearer end.
+    private static void ExpandAlongLine(GkBody bd1, GkBody bd2, GkSimplex simplex,
+        EpaPolytope poly, ref double distance, double[] contactNormal)
+    {
+        double[] direction = poly.Direction;
+
+        // Any two distinct simplex vertices span the line.
+        double lengthSq = 0;
+        for (int vtx = 1; vtx < simplex.NVrtx; ++vtx)
+        {
+            for (int c = 0; c < 3; ++c)
+            {
+                direction[c] = simplex.Vrtx[vtx, c] - simplex.Vrtx[0, c];
+            }
+
+            lengthSq = Norm2(direction);
+            if (lengthSq > _gkEpsilon * _gkEpsilon)
+            {
+                break;
+            }
+        }
+
+        if (lengthSq <= _gkEpsilon * _gkEpsilon)
+        {
+            // A single point: the bodies touch and 0 is the honest answer.
+            SetDegenerateResult(bd1, bd2, simplex, poly, 0, ref distance, contactNormal);
+            return;
+        }
+
+        double length = Math.Sqrt(lengthSq);
+        for (int c = 0; c < 3; ++c)
+        {
+            direction[c] /= length;
+        }
+
+        double[] support = poly.NewVertex;
+        int[] supportIdx = poly.NewVertexIdx;
+        double[] negative = poly.TempC;
+
+        SupportEpa(bd1, bd2, poly, direction, support, supportIdx);
+        double forward = DotProduct(direction, support);
+        int forwardA = supportIdx[0];
+        int forwardB = supportIdx[1];
+
+        for (int c = 0; c < 3; ++c)
+        {
+            negative[c] = -direction[c];
+        }
+
+        SupportEpa(bd1, bd2, poly, negative, support, supportIdx);
+        double backward = DotProduct(negative, support);
+
+        // The origin lies inside the segment, so both extents are non-negative up to rounding.
+        double depth = forward < backward ? forward : backward;
+        if (depth < 0)
+        {
+            depth = 0;
+        }
+
+        if (forward >= backward)
+        {
+            for (int c = 0; c < 3; ++c)
+            {
+                direction[c] = negative[c];
+            }
+        }
+        else
+        {
+            supportIdx[0] = forwardA;
+            supportIdx[1] = forwardB;
+        }
+
+        for (int c = 0; c < 3; ++c)
+        {
+            contactNormal[c] = direction[c];
+        }
+
+        SetDegenerateResult(bd1, bd2, simplex, poly, depth, ref distance, contactNormal);
+    }
+
+    // Depth of a pair whose Minkowski difference is a flat polygon: the two-dimensional EPA.
+    // The polygon starts as the triangle EPA could not grow and is expanded toward the origin's
+    // nearest edge until no support point beyond that edge exists.
+    private static void ExpandPlanarPolygon(GkBody bd1, GkBody bd2, GkSimplex simplex,
+        EpaPolytope poly, ref double distance, double[] contactNormal)
+    {
+        const double tolerance = _gkEpsilon * 1e2;
+        const double epsSq = _gkEpsilon * _gkEpsilon;
+        const int maxIterations = 64;
+
+        double[] planeNormal = poly.PlaneNormal;
+        double planeLength = Math.Sqrt(Norm2(planeNormal));
+        for (int c = 0; c < 3; ++c)
+        {
+            planeNormal[c] /= planeLength;
+        }
+
+        // The triangle is wound counter-clockwise about the plane normal by construction
+        // (the normal came from its own edge cross product), so edge x normal points outward.
+        double[][] vertices = poly.PlanarVertices;
+        int[][] indices = poly.PlanarVertexIndices;
+        for (int vtx = 0; vtx < 3; ++vtx)
+        {
+            for (int c = 0; c < 3; ++c)
+            {
+                vertices[vtx][c] = simplex.Vrtx[vtx, c];
+            }
+
+            indices[vtx][0] = simplex.VrtxIdx[vtx, 0];
+            indices[vtx][1] = simplex.VrtxIdx[vtx, 1];
+        }
+
+        poly.NumPlanarVertices = 3;
+
+        double[] support = poly.NewVertex;
+        int[] supportIdx = poly.NewVertexIdx;
+        double[] edge = poly.TempA;
+        double[] outward = poly.TempB;
+        double edgeDistance = 0;
+
+        for (int iteration = 0; iteration < maxIterations; ++iteration)
+        {
+            int count = poly.NumPlanarVertices;
+
+            // Find the edge whose supporting line is closest to the origin.
+            int closest = -1;
+            double closestDistance = double.MaxValue;
+            for (int i = 0; i < count; ++i)
+            {
+                int j = i + 1 == count ? 0 : i + 1;
+                if (!EdgeOutwardNormal(vertices[i], vertices[j], planeNormal, edge, outward))
+                {
+                    continue;
+                }
+
+                // The origin is inside the polygon, so this is non-negative up to rounding.
+                double signedDistance = DotProduct(outward, vertices[i]);
+                if (signedDistance < 0)
+                {
+                    signedDistance = 0;
+                }
+
+                if (signedDistance < closestDistance)
+                {
+                    closestDistance = signedDistance;
+                    closest = i;
+                }
+            }
+
+            if (closest < 0)
+            {
+                break;
+            }
+
+            int next = closest + 1 == count ? 0 : closest + 1;
+            EdgeOutwardNormal(vertices[closest], vertices[next], planeNormal, edge, outward);
+            edgeDistance = closestDistance;
+
+            SupportEpa(bd1, bd2, poly, outward, support, supportIdx);
+            double supportDistance = DotProduct(outward, support);
+
+            // Every outward normal tried gives a support line touching both bodies, so its
+            // distance bounds the depth from above; keep the tightest one, exactly as the
+            // three-dimensional pass does for support planes.
+            if (supportDistance < poly.BestDepth)
+            {
+                RecordBestEdge(poly, vertices[closest], vertices[next],
+                    indices[closest], indices[next], outward, supportDistance);
+            }
+
+            if (supportDistance - edgeDistance < tolerance)
+            {
+                break;
+            }
+
+            bool isDuplicate = false;
+            for (int i = 0; i < count; ++i)
+            {
+                double dx = support[0] - vertices[i][0];
+                double dy = support[1] - vertices[i][1];
+                double dz = support[2] - vertices[i][2];
+                if (dx * dx + dy * dy + dz * dz < epsSq)
+                {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+
+            if (isDuplicate || count == EpaPolytope.MaxPlanarVertices)
+            {
+                break;
+            }
+
+            // Split the closest edge with the new support point, keeping the winding.
+            for (int i = count; i > next; --i)
+            {
+                double[] source = vertices[i - 1];
+                double[] target = vertices[i];
+                target[0] = source[0];
+                target[1] = source[1];
+                target[2] = source[2];
+                indices[i][0] = indices[i - 1][0];
+                indices[i][1] = indices[i - 1][1];
+            }
+
+            for (int c = 0; c < 3; ++c)
+            {
+                vertices[next][c] = support[c];
+            }
+
+            indices[next][0] = supportIdx[0];
+            indices[next][1] = supportIdx[1];
+            poly.NumPlanarVertices = count + 1;
+        }
+
+        // Same bound arithmetic as the three-dimensional pass: the edge distance is a lower
+        // bound on the depth, the tightest support line an upper one.
+        double depth = poly.BestDepth > edgeDistance ? poly.BestDepth : edgeDistance;
+        if (depth < 0 || double.IsInfinity(depth) || double.IsNaN(depth))
+        {
+            depth = 0;
+        }
+
+        for (int c = 0; c < 3; ++c)
+        {
+            contactNormal[c] = poly.PlanarBestNormal[c];
+        }
+
+        SetPlanarWitnesses(bd1, bd2, simplex, poly);
+        distance = depth > 0 ? -depth : 0;
+    }
+
+    // In-plane outward normal of the edge from <paramref name="from"/> to <paramref name="to"/>,
+    // for a polygon wound counter-clockwise about <paramref name="planeNormal"/>.
+    // Returns false for an edge too short to have a direction.
+    private static bool EdgeOutwardNormal(double[] from, double[] to, double[] planeNormal,
+        double[] edge, double[] outward)
+    {
+        for (int c = 0; c < 3; ++c)
+        {
+            edge[c] = to[c] - from[c];
+        }
+
+        CrossProduct(edge, planeNormal, outward);
+        double length = Math.Sqrt(Norm2(outward));
+        if (length <= _gkEpsilon)
+        {
+            return false;
+        }
+
+        for (int c = 0; c < 3; ++c)
+        {
+            outward[c] /= length;
+        }
+
+        return true;
+    }
+
+    private static void RecordBestEdge(EpaPolytope poly, double[] from, double[] to,
+        int[] fromIndices, int[] toIndices, double[] outward, double supportDistance)
+    {
+        poly.BestDepth = supportDistance;
+
+        for (int c = 0; c < 3; ++c)
+        {
+            poly.PlanarBestEdge[0][c] = from[c];
+            poly.PlanarBestEdge[1][c] = to[c];
+            poly.PlanarBestNormal[c] = outward[c];
+        }
+
+        poly.PlanarBestEdgeIndices[0][0] = fromIndices[0];
+        poly.PlanarBestEdgeIndices[0][1] = fromIndices[1];
+        poly.PlanarBestEdgeIndices[1][0] = toIndices[0];
+        poly.PlanarBestEdgeIndices[1][1] = toIndices[1];
+    }
+
+    // Witness points from the closest edge, weighted by where the origin projects onto it.
+    // Both collapse onto a common point inside the overlap, as they do for the 3D pass.
+    private static void SetPlanarWitnesses(GkBody bd1, GkBody bd2, GkSimplex simplex, EpaPolytope poly)
+    {
+        double[] from = poly.PlanarBestEdge[0];
+        double[] to = poly.PlanarBestEdge[1];
+
+        double edgeX = to[0] - from[0];
+        double edgeY = to[1] - from[1];
+        double edgeZ = to[2] - from[2];
+        double lengthSq = Norm2(edgeX, edgeY, edgeZ);
+
+        double t = 0;
+        if (lengthSq > _gkEpsilon * _gkEpsilon)
+        {
+            t = -(from[0] * edgeX + from[1] * edgeY + from[2] * edgeZ) / lengthSq;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+        }
+
+        double w0 = 1 - t;
+        int[] fromIndices = poly.PlanarBestEdgeIndices[0];
+        int[] toIndices = poly.PlanarBestEdgeIndices[1];
+
+        for (int c = 0; c < 3; ++c)
+        {
+            simplex.Witnesses[0, c] = bd1.GetPoint(fromIndices[0])[c] * w0
+                + bd1.GetPoint(toIndices[0])[c] * t;
+            simplex.Witnesses[1, c] = bd2.GetPoint(fromIndices[1])[c] * w0
+                + bd2.GetPoint(toIndices[1])[c] * t;
+        }
+    }
+
+    private static void SetDegenerateResult(GkBody bd1, GkBody bd2, GkSimplex simplex,
+        EpaPolytope poly, double depth, ref double distance, double[] contactNormal)
+    {
+        int[] supportIdx = poly.NewVertexIdx;
+        for (int c = 0; c < 3; ++c)
+        {
+            simplex.Witnesses[0, c] = bd1.GetPoint(supportIdx[0])[c];
+            simplex.Witnesses[1, c] = bd2.GetPoint(supportIdx[1])[c];
+        }
+
+        if (depth <= 0)
+        {
+            distance = 0;
+            SetContactNormal(simplex, contactNormal);
+            return;
+        }
+
+        distance = -depth;
+    }
+
     private static void RecordBestFace(EpaPolytope poly, EpaFace face, double supportDistance)
     {
         poly.BestDepth = supportDistance;

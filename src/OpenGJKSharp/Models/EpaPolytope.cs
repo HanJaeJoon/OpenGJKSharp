@@ -71,6 +71,34 @@ internal sealed class EpaPolytope
     /// <summary>Body point ids of that face's vertices [vertex][body].</summary>
     public int[][] BestVertexIndices { get; } = [new int[2], new int[2], new int[2]];
 
+    /// <summary>
+    /// Maximum number of vertices of the expanding polygon used when the Minkowski difference
+    /// is flat and no tetrahedron exists.
+    /// </summary>
+    public const int MaxPlanarVertices = 64;
+
+    /// <summary>
+    /// Vertices of the expanding polygon, in cyclic order around the shared plane.
+    /// </summary>
+    public double[][] PlanarVertices { get; } = new double[MaxPlanarVertices][];
+
+    /// <summary>Body point ids behind <see cref="PlanarVertices"/> [vertex][body].</summary>
+    public int[][] PlanarVertexIndices { get; } = new int[MaxPlanarVertices][];
+
+    public int NumPlanarVertices { get; set; }
+
+    /// <summary>Normal of the plane the flat Minkowski difference lies in (not normalized).</summary>
+    public double[] PlaneNormal { get; } = new double[3];
+
+    /// <summary>Endpoints of the polygon edge that produced <see cref="BestDepth"/>.</summary>
+    public double[][] PlanarBestEdge { get; } = [new double[3], new double[3]];
+
+    /// <summary>Body point ids of those endpoints [endpoint][body].</summary>
+    public int[][] PlanarBestEdgeIndices { get; } = [new int[2], new int[2]];
+
+    /// <summary>In-plane outward normal that produced <see cref="BestDepth"/>.</summary>
+    public double[] PlanarBestNormal { get; } = new double[3];
+
     /// <summary>Search direction used while a degenerate GJK simplex is grown to a tetrahedron.</summary>
     public double[] Direction { get; } = new double[3];
 
@@ -80,12 +108,21 @@ internal sealed class EpaPolytope
     /// <inheritdoc cref="TempA"/>
     public double[] TempB { get; } = new double[3];
 
+    /// <inheritdoc cref="TempA"/>
+    public double[] TempC { get; } = new double[3];
+
     public EpaPolytope()
     {
         for (int i = 0; i < MaxEpaVertices; i++)
         {
             Vertices[i] = new double[3];
             VertexIndices[i] = new int[2];
+        }
+
+        for (int i = 0; i < MaxPlanarVertices; i++)
+        {
+            PlanarVertices[i] = new double[3];
+            PlanarVertexIndices[i] = new int[2];
         }
 
         for (int i = 0; i < MaxEpaFaces; i++)

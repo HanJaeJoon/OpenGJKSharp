@@ -128,8 +128,43 @@ the respective surfaces. Once the bodies overlap there is no closest pair: the d
 0 and both witness points collapse onto a common point inside the intersection, which is
 not on either surface. Use `ComputeCollisionInformation` for that case.
 
-`HasCollision` and `ComputeMinimumDistance` also accept `Vector2[]` polygons
-(treated as flat shapes on the z = 0 plane).
+### 2D polygons and other flat geometry
+
+Every query also accepts `Vector2[]` polygons, treated as flat shapes on the z = 0 plane, and
+reports the depth and normal in that plane:
+
+``` c#
+Vector2[] a = [new(0, 0), new(1, 0), new(1, 1), new(0, 1)];
+Vector2[] b = [new(0.75f, 0), new(1.75f, 0), new(1.75f, 1), new(0.75f, 1)];
+
+bool hit = OpenGjk.HasCollision(a, b);
+double distance = OpenGjk.ComputeMinimumDistance(a, b, out Vector2 onA, out Vector2 onB);
+double info = OpenGjk.ComputeCollisionInformation(a, b, out Vector2 contactNormal);
+
+if (OpenGjk.TryGetPenetration(a, b, out double depth, out Vector2 normal))
+{
+    Console.WriteLine($"{depth} along {normal}");   // 0.25 along <1, 0>
+}
+```
+
+The same holds for a coplanar pair given in 3D - `Vector3[]` vertices or flat `ConvexHull`
+shapes that share a plane - and for two bodies on a common line: the depth is the minimum
+translation within the plane (or along the line).
+
+Note that this is a deliberate reading of a degenerate case. In three dimensions the honest
+depth of a flat pair is 0, because moving either body out of the shared plane by any amount at
+all separates them. Reporting that is useless to a caller working with flat geometry, and
+indistinguishable from "not colliding", so the in-plane answer is reported instead. The
+consequence is a discontinuity in the thickness of the bodies: a pair 1e-6 thick is genuinely
+three-dimensional and gets its out-of-plane depth of 1e-6, while the same pair at thickness 0
+gets the in-plane depth.
+
+With `Vector2[]` input the pair is flat by construction. With single-precision `Vector3`
+vertices it has to be flat *as quantized*: rotating a coplanar pair by an arbitrary angle moves
+each vertex to the nearest `float` and generally leaves the two bodies in slightly different
+planes, which is a three-dimensional configuration where the two flat bodies may not intersect
+at all. Use the `ReadOnlySpan<double>` overloads, or keep flat geometry on a plane whose
+coordinates are exact, when this matters.
 
 ### Double-precision input
 
@@ -363,6 +398,10 @@ These are bug fixes, but if your code depended on the old values, check these th
   reported 1.888 instead of 2.0). The depth now comes from the tightest support plane, an upper
   bound, so worst-case error over a sphere overlap sweep is 0.24%. Depenetration that used to
   leave a sliver of overlap now separates the bodies; polyhedra are unaffected (still exact).
+- **Flat pairs report an in-plane depth instead of 0.** Two coplanar bodies, or two bodies on a
+  common line, used to come back with depth 0 - see
+  [2D polygons and other flat geometry](#2d-polygons-and-other-flat-geometry) for what is
+  reported now and why.
 - **Bodies whose interior points coincide now report a depth instead of 0.** Concentric bodies, one
   body containing another, and two long bodies crossing at their common center used to come back
   with depth 0 - indistinguishable from "not colliding" for callers that tested the depth.

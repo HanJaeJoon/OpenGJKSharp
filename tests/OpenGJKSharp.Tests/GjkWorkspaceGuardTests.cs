@@ -51,6 +51,10 @@ public class GjkWorkspaceGuardTests
                 w => OpenGjk.ComputeCollisionInformation(_cloudA, _cloudB, w, out Vector3 _)
             },
             {
+                "ComputeCollisionInformation(Vector2[])",
+                w => OpenGjk.ComputeCollisionInformation(_polygonA, _polygonB, w, out Vector2 _)
+            },
+            {
                 "ComputeCollisionInformation(ReadOnlySpan<double>)",
                 w => OpenGjk.ComputeCollisionInformation(_coordsA, _coordsB, w, new double[3])
             },
@@ -61,6 +65,10 @@ public class GjkWorkspaceGuardTests
             {
                 "TryGetPenetration(Vector3[])",
                 w => OpenGjk.TryGetPenetration(_cloudA, _cloudB, w, out double _, out Vector3 _)
+            },
+            {
+                "TryGetPenetration(Vector2[])",
+                w => OpenGjk.TryGetPenetration(_polygonA, _polygonB, w, out double _, out Vector2 _)
             },
             {
                 "TryGetPenetration(ISupportMappable)",
