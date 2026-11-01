@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-01
+
 ### Added
 
 - `TryGetPenetration` overloads that also return the contact points (`pointA`, `pointB`): the
@@ -229,7 +231,8 @@ Read this section before upgrading from 0.5.0. The README has a
 
 - Initial release: GJK minimum distance and `HasCollision` for convex polyhedra (`Vector3[]`) and flat polygons (`Vector2[]`)
 
-[Unreleased]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/HanJaeJoon/OpenGJKSharp/compare/v0.3.0...v0.4.0
