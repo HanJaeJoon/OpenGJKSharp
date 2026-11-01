@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TryGetPenetration` overloads that also return the contact points (`pointA`, `pointB`): the
   deepest point of each body along the contact normal, each on its own body's surface and
   separated along the normal by the depth (`dot(pointA - pointB, contactNormal) == depth`).
+  Each point is on its body's support plane along the normal - on a flat face a point of that
+  face, typically a vertex - and the two need not be aligned across the contact, so resting
+  contact with a single-point solver needs a manifold of several points.
   When the bodies are apart they are the closest points, as `ComputeMinimumDistance` reports.
   Previously the only witness points came from `ComputeMinimumDistance`, which collapse onto an
   interior point once the bodies overlap. Available for `ISupportMappable` shapes, `Vector3[]`

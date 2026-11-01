@@ -115,11 +115,14 @@ if (OpenGjk.TryGetPenetration(a, b, out double depth, out Vector3 normal,
 }
 ```
 
-Where flat faces meet, the two points face each other inside the contact region; on a curved
-surface the point is the body's support point along the normal. When the bodies are apart
-(`false`), they are the closest points, the same as `ComputeMinimumDistance` reports. Every
-`TryGetPenetration` overload has this variant (`Vector2[]` polygons return `Vector2` points,
-`ReadOnlySpan<double>` coordinates write them to 3-element spans).
+Each point lies on its body's support plane along the normal: on a curved surface it is the
+body's support point, and on a flat face it is a point of that face, typically a vertex. The
+two points need not be aligned across the contact, so a solver that applies one impulse at a
+single point per query sees a box resting on a face rock between the face's vertices - resting
+contact needs a manifold of several points (for example gathered over frames). When the bodies
+are apart (`false`), they are the closest points, the same as `ComputeMinimumDistance`
+reports. Every `TryGetPenetration` overload has this variant (`Vector2[]` polygons return
+`Vector2` points, `ReadOnlySpan<double>` coordinates write them to 3-element spans).
 
 For exactly concentric bodies every direction is a valid minimum translation, so the
 returned normal direction is arbitrary (still unit length).

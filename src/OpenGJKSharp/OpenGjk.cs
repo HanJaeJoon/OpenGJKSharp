@@ -973,9 +973,13 @@ public static partial class OpenGjk
     /// along <paramref name="contactNormal"/> and <paramref name="pointB"/> the deepest point of the
     /// second body against it. Both lie on the surface of their own body, and they are separated
     /// along the normal by exactly the depth: <c>dot(pointA - pointB, contactNormal) == depth</c>,
-    /// up to rounding. Where flat faces meet, the two points face each other inside the contact
-    /// region; on a curved surface the point is the body's support point along the normal. When
-    /// the normal is arbitrary (concentric bodies) the points follow whatever normal is returned.
+    /// up to rounding. Each point is on its body's support plane along the normal: on a curved
+    /// surface it is the body's support point, and where a flat face meets the other body it is
+    /// a point of that face, typically one of its vertices. The two points need not be aligned
+    /// across the contact, so a solver that applies one impulse per query at a single point sees
+    /// a box resting on a face rock between the face's vertices; resting contact needs a manifold
+    /// of several points. When the normal is arbitrary (concentric bodies) the points follow
+    /// whatever normal is returned.
     /// </para>
     /// <para>
     /// When the bodies are apart, the points are their closest points - the witness points
