@@ -19,4 +19,5 @@ Guidance for Claude Code when working in this repository.
 - Never run `dotnet pack` on its own: `GeneratePackageOnBuild=true` makes it skip the build and
   package a stale `bin` (or fail with NU5026 when `bin` is clean). Use `dotnet build -c Release`,
   or `dotnet build` followed by `dotnet pack --no-build` -- the order the CI workflow uses.
+- At each release, bump `<PackageValidationBaselineVersion>` in the csproj to the latest published version.
 - Keep `CHANGELOG.md` (Keep a Changelog format) up to date with user-visible changes.

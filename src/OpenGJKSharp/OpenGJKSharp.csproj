@@ -19,6 +19,8 @@
     <Copyright>Copyright (c) HanJaeJoon</Copyright>
     <PackageReleaseNotes>See https://github.com/HanJaeJoon/OpenGJKSharp/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>0.6.0</PackageValidationBaselineVersion>
 
     <!-- SourceLink: 패키지 사용자가 디버깅 시 GitHub 소스로 step-in 가능 -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
