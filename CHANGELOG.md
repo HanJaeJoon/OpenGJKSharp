@@ -26,9 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translation at first contact, the contact normal (pointing from the moving shape toward the
   static one), and the contact point. Shapes that already overlap report a hit at fraction 0
   with a zero normal. Available with a `GjkWorkspace` variant.
-  Both casts use the GJK ray cast (van den Bergen 2004), never report a fraction past the true
-  one, and give exact normals on flat faces; on curved surfaces the normal is accurate to about
-  1e-3 for unit-sized shapes.
+  Both casts use the GJK ray cast (van den Bergen 2004) and never report a fraction past the
+  true one. Shapes count as touching within about 1e-6 of the shape size, or a few float ulps
+  of the coordinates far from the origin; a cast that starts within that distance reports
+  fraction 0 with a zero normal. Normals are exact on flat faces; on curved surfaces they are
+  accurate to about 1e-3 near the origin (up to 3e-3 on a capsule side), and to about 1e-2 for
+  a unit sphere at 1e3, where float resolution limits them.
 
 ### Changed
 

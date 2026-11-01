@@ -282,15 +282,23 @@ if (OpenGjk.TryCastShape(ball, box, translation: new Vector3(10, 0, 0),
         out double toi, out Vector3 contactNormal, out Vector3 contactPoint))
 {
     // toi = 0.3: moving the ball by 0.3 * translation makes it touch the box,
-    // contactNormal = (1, 0, 0) points from the ball toward the box, contactPoint = (4, 0, 0)
+    // contactNormal = (1, 0, 0) points from the ball toward the box,
+    // contactPoint = about (4, 0, 0) - on a curved surface it lags slightly
 }
 ```
 
 The reported fraction never lies past the true time of impact, so moving by it never leaves
-the shapes overlapping. A ray that starts inside the shape, or a sweep whose shapes already
-overlap at the start, reports a hit with fraction 0 and a zero normal - use `TryGetPenetration`
-to separate such a pair. The normal is exact on flat faces; on curved surfaces it is
-accurate to about 1e-3 for unit-sized shapes. Both queries have `GjkWorkspace` overloads.
+the shapes overlapping. Shapes count as touching when they come closer than the touch
+distance: about 1e-6 times the size of the larger shape, or a few float ulps of the
+coordinates far from the origin, where float support points are coarser than that (one ulp is
+about 6e-5 at 1e3). A ray that starts inside the shape or within the touch distance of it,
+or a sweep whose shapes overlap or touch at the start, reports a hit with fraction 0 and a
+zero normal - use `TryGetPenetration` to separate such a pair.
+
+The normal is exact on flat faces (except within the touch distance of an edge, where it may
+belong to the adjacent face). On curved surfaces it lags the true normal by about 1e-3 near
+the origin (up to 3e-3 on the side of a capsule); far from the origin float resolution
+limits it to about 1e-2 for a unit sphere at 1e3. Both queries have `GjkWorkspace` overloads.
 
 ### Shapes and custom support functions
 

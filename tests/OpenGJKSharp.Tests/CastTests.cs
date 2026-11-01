@@ -11,6 +11,11 @@ public class CastTests
     // surface by the convergence tolerance; the contact point inherits the same error.
     private const double CurvedTolerance = 2e-3;
 
+    private const double FaceNormalTolerance = 1e-4;
+
+    // A gap of 1/1024: exactly representable next to the face coordinate 0.75.
+    private const float Gap = 1f / 1024;
+
     public static TheoryData<string, double, Vector3, double> RayHits()
     {
         double rotatedFace = 10 - (1 / Math.Cos(Math.PI / 6));
@@ -258,6 +263,125 @@ public class CastTests
         }
     }
 
+    // Far from the origin the touch distance must stay at float resolution: a gap of 1/1024 is
+    // a miss even at x = 1e4, where it is one ulp of the x coordinate.
+    [Theory]
+    [InlineData(1e3f)]
+    [InlineData(1e4f)]
+    public void Should_Miss_When_RayPassesJustAboveFaceFarFromOrigin(float x)
+    {
+        var box = new Box(new Vector3(x, 0, 0), new Vector3(1.5f, 0.75f, 1.25f));
+
+        bool hit = OpenGjk.TryCastRay(box, new Vector3(x - 5, 0.75f + Gap, 0), new Vector3(10, 0, 0), out double fraction, out Vector3 normal);
+
+        Assert.False(hit, $"fraction {fraction}, normal {normal}");
+    }
+
+    [Theory]
+    [InlineData(1e3f)]
+    [InlineData(1e4f)]
+    public void Should_ReportFaceNormal_When_RayHitsBoxFarFromOrigin(float x)
+    {
+        var box = new Box(new Vector3(x, 0, 0), new Vector3(1.5f, 0.75f, 1.25f));
+
+        Assert.True(OpenGjk.TryCastRay(box, new Vector3(x - 5, 0.5f, 0.3f), new Vector3(10, 0, 0), out double side, out Vector3 sideNormal));
+        Assert.Equal(0.35, side, Tolerance);
+        AssertVector(new Vector3(-1, 0, 0), sideNormal, FaceNormalTolerance);
+
+        Assert.True(OpenGjk.TryCastRay(box, new Vector3(x, 5, 0.3f), new Vector3(0.2f, -10, 0), out double top, out Vector3 topNormal));
+        Assert.Equal(0.425, top, Tolerance);
+        AssertVector(new Vector3(0, 1, 0), topNormal, FaceNormalTolerance);
+    }
+
+    [Fact]
+    public void Should_MissAndHitAsNearOrigin_When_RayStartsFarFromBox()
+    {
+        var box = new Box(Vector3.Zero, new Vector3(1.5f, 0.75f, 1.25f));
+
+        Assert.False(OpenGjk.TryCastRay(box, new Vector3(-1000, 0.75f + Gap, 0), new Vector3(2000, 0, 0), out _, out _));
+
+        Assert.True(OpenGjk.TryCastRay(box, new Vector3(-1000, 0.5f, 0), new Vector3(2000, 0, 0), out double fraction, out Vector3 normal));
+        Assert.Equal(998.5 / 2000, fraction, 1e-9);
+        AssertVector(new Vector3(-1, 0, 0), normal, FaceNormalTolerance);
+    }
+
+    [Theory]
+    [InlineData(1e3f)]
+    [InlineData(1e4f)]
+    public void Should_MissAndHitAsNearOrigin_When_BoxIsCastFarFromOrigin(float x)
+    {
+        var fixedBox = new Box(new Vector3(x, 0, 0), new Vector3(1.5f, 0.75f, 1.25f));
+        var half = new Vector3(0.5f, 0.5f, 0.5f);
+
+        var above = new Box(new Vector3(x - 5, 0.75f + 0.5f + Gap, 0), half);
+        Assert.False(OpenGjk.TryCastShape(above, fixedBox, new Vector3(10, 0, 0), out double missFraction, out Vector3 missNormal, out _),
+            $"fraction {missFraction}, normal {missNormal}");
+
+        var level = new Box(new Vector3(x - 5, 0.2f, 0.1f), half);
+        Assert.True(OpenGjk.TryCastShape(level, fixedBox, new Vector3(10, 0, 0), out double side, out Vector3 sideNormal, out Vector3 sidePoint));
+        Assert.Equal(0.3, side, Tolerance);
+        AssertVector(new Vector3(1, 0, 0), sideNormal, FaceNormalTolerance);
+        Assert.Equal(x - 1.5, sidePoint.X, x * 1e-7);
+
+        var falling = new Box(new Vector3(x + 0.2f, 3, 0.1f), half);
+        Assert.True(OpenGjk.TryCastShape(falling, fixedBox, new Vector3(0, -10, 0), out double down, out Vector3 downNormal, out _));
+        Assert.Equal(0.175, down, Tolerance);
+        AssertVector(new Vector3(0, -1, 0), downNormal, FaceNormalTolerance);
+    }
+
+    // Oracle: the slab test (box) and the ray-sphere quadratic (sphere) in double, on shapes
+    // grown and shrunk by a margin of a few float ulps of the coordinates. A ray that misses the
+    // grown shape must miss; one that hits the shrunk shape must hit, between the entry
+    // fractions of the grown and the shrunk shape. Rays in between are within float resolution.
+    [Theory]
+    [InlineData("box")]
+    [InlineData("sphere")]
+    public void Should_AgreeWithOracle_When_RandomRaysAreCastFarFromOrigin(string kind)
+    {
+        const float offset = 1e3f;
+        double margin = 2 * offset * Math.Pow(2, -23);
+        var center = new Vector3(offset, -offset, offset);
+        var half = new Vector3(1.5f, 0.75f, 1.25f);
+        ISupportMappable shape = kind == "box" ? new Box(center, half) : new Sphere(center, 1);
+        var random = new Random(20261102);
+        int hits = 0, misses = 0;
+
+        for (int i = 0; i < 2000; i++)
+        {
+            Vector3 origin = center + (RandomPoint(random) * 1.7f);
+            Vector3 translation = (center + (RandomPoint(random) * 0.8f) - origin) * (float)(0.5 + (random.NextDouble() * 1.5));
+
+            bool hit = OpenGjk.TryCastRay(shape, origin, translation, out double fraction, out _);
+
+            bool grown, shrunk;
+            double outer, inner;
+            if (kind == "box")
+            {
+                grown = SlabEntry(center, half, margin, origin, translation, out outer);
+                shrunk = SlabEntry(center, half, -margin, origin, translation, out inner);
+            }
+            else
+            {
+                grown = SphereEntry(center, 1 + margin, origin, translation, out outer);
+                shrunk = SphereEntry(center, 1 - margin, origin, translation, out inner);
+            }
+
+            if (!grown)
+            {
+                Assert.False(hit, $"ray {i} from {origin} along {translation} misses by more than {margin} but hit at {fraction}");
+                misses++;
+            }
+            else if (shrunk)
+            {
+                Assert.True(hit, $"ray {i} from {origin} along {translation} enters by more than {margin} but missed");
+                Assert.InRange(fraction, outer, inner);
+                hits++;
+            }
+        }
+
+        Assert.True(hits > 300 && misses > 300, $"{hits} hits, {misses} misses");
+    }
+
     [Fact]
     public void Should_Throw_When_CastInputIsInvalid()
     {
@@ -333,6 +457,60 @@ public class CastTests
             _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null),
         };
     }
+
+    // Entry fraction of the segment into the box grown by margin on every side, clamped to 0
+    // for a segment that starts inside.
+    private static bool SlabEntry(Vector3 center, Vector3 half, double margin, Vector3 origin, Vector3 translation, out double entry)
+    {
+        double enter = 0, exit = 1;
+        for (int axis = 0; axis < 3; axis++)
+        {
+            double c = Component(center, axis), h = Component(half, axis) + margin;
+            double o = Component(origin, axis), r = Component(translation, axis);
+            if (r == 0)
+            {
+                if (Math.Abs(o - c) > h)
+                {
+                    entry = 0;
+                    return false;
+                }
+
+                continue;
+            }
+
+            double t1 = (c - h - o) / r, t2 = (c + h - o) / r;
+            enter = Math.Max(enter, Math.Min(t1, t2));
+            exit = Math.Min(exit, Math.Max(t1, t2));
+        }
+
+        entry = enter;
+        return enter <= exit;
+    }
+
+    private static bool SphereEntry(Vector3 center, double radius, Vector3 origin, Vector3 translation, out double entry)
+    {
+        double ox = (double)origin.X - center.X, oy = (double)origin.Y - center.Y, oz = (double)origin.Z - center.Z;
+        double rx = translation.X, ry = translation.Y, rz = translation.Z;
+        double a = (rx * rx) + (ry * ry) + (rz * rz);
+        double b = (ox * rx) + (oy * ry) + (oz * rz);
+        double c = (ox * ox) + (oy * oy) + (oz * oz) - (radius * radius);
+        double discriminant = (b * b) - (a * c);
+        entry = 0;
+        if (c <= 0)
+        {
+            return true;
+        }
+
+        if (discriminant < 0 || b >= 0)
+        {
+            return false;
+        }
+
+        entry = (-b - Math.Sqrt(discriminant)) / a;
+        return entry <= 1;
+    }
+
+    private static double Component(Vector3 v, int axis) => axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
 
     private static void AssertVector(Vector3 expected, Vector3 actual, double tolerance)
     {

@@ -5,13 +5,16 @@ namespace OpenGJKSharp;
 
 public static partial class OpenGjk
 {
-    // Relative to the largest coordinate seen, so it sits above the single-precision
-    // quantization of the support points (about 6e-8 relative) at any scale.
+    // Relative to the size of the shapes (the largest distance from a shape's center to a
+    // support point seen), not to their world coordinates, so the touch distance does not grow
+    // with the distance from the origin. Far from the origin, where float support points are
+    // coarser than this, the stall test in Cast ends the iteration at float resolution instead.
     private const double _castTolerance = 1e-6;
 
-    // Twice the worst case measured over random rays against a capsule (31 iterations; rays
-    // against polytopes need far fewer). Each advancement along the ray adds iterations to what
-    // a plain distance query needs, and curved shapes hit at a grazing angle use the most.
+    // About twice the worst case measured over random rays and sweeps involving capsules and
+    // spheres at offsets 0, 1e3 and 1e4 (36 iterations; polytopes need at most 9). Each
+    // advancement along the ray adds iterations to what a plain distance query needs, and
+    // curved shapes hit at a grazing angle use the most.
     private const int _castMaxIterations = 64;
 
     /// <summary>
@@ -42,13 +45,25 @@ public static partial class OpenGjk
     /// finds, so the reported hit point never lies past the true one.
     /// </para>
     /// <para>
-    /// The normal is that of the last separating plane. It is exact on a flat face; on a curved
-    /// surface it lags slightly behind the true normal, by about 1e-3 for unit-sized shapes.
+    /// The ray counts as touching the shape where it passes closer than the touch distance:
+    /// about 1e-6 times the size of the shape (the distance from its
+    /// <see cref="ISupportMappable.GetCenter"/> to its surface), or, far from the origin where
+    /// float support points are coarser than that, a few float ulps of the coordinates (one
+    /// ulp is about 6e-5 at 1e3). The touch distance does not otherwise depend on where the
+    /// shape is.
     /// </para>
     /// <para>
-    /// A ray that starts inside the shape (or on its surface) reports a hit with
-    /// <paramref name="fraction"/> 0 and a zero <paramref name="normal"/>: there is no entry point
-    /// to report a normal for.
+    /// The normal is that of the last separating plane. It is exact on a flat face, up to the
+    /// float rounding of the shape's support points, except within the touch distance of an
+    /// edge, where it may be the normal of the adjacent face. On a curved surface it lags behind
+    /// the true normal by about 1e-3 near the origin (up to 3e-3 on the side of a capsule), and
+    /// by about the square root of the float resolution over the radius far from it (about 1e-2
+    /// for a unit sphere at 1e3).
+    /// </para>
+    /// <para>
+    /// A ray that starts inside the shape, or within the touch distance of its surface, reports
+    /// a hit with <paramref name="fraction"/> 0 and a zero <paramref name="normal"/>: there is no
+    /// entry point to report a normal for.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="shape"/> is null.</exception>
@@ -152,13 +167,24 @@ public static partial class OpenGjk
     /// <paramref name="a"/> by it never leaves the shapes overlapping.
     /// </para>
     /// <para>
-    /// The normal is that of the last separating plane. It is exact where a flat face is hit;
-    /// where a curved surface is involved it lags slightly behind the true normal, by about 1e-3
-    /// for unit-sized shapes, and the contact point by a similar amount.
+    /// The shapes count as touching where they come closer than the touch distance: about 1e-6
+    /// times the size of the larger shape (the distance from its
+    /// <see cref="ISupportMappable.GetCenter"/> to its surface), or, far from the origin where
+    /// float support points are coarser than that, a few float ulps of the coordinates (one
+    /// ulp is about 6e-5 at 1e3). The touch distance does not otherwise depend on where the
+    /// shapes are.
     /// </para>
     /// <para>
-    /// Shapes that already overlap (or touch) at the start pose report a hit with
-    /// <paramref name="fraction"/> 0 and a zero <paramref name="normal"/>; use
+    /// The normal is that of the last separating plane. It is exact where a flat face is hit, up
+    /// to the float rounding of the support points, except within the touch distance of an edge,
+    /// where it may be the normal of the adjacent face. Where a curved surface is involved it
+    /// lags behind the true normal by about 1e-3 near the origin, and by about the square root
+    /// of the float resolution over the radius far from it (about 1e-2 for a unit sphere at
+    /// 1e3); the contact point lags by a similar amount.
+    /// </para>
+    /// <para>
+    /// Shapes that already overlap at the start pose, or are within the touch distance of each
+    /// other, report a hit with <paramref name="fraction"/> 0 and a zero <paramref name="normal"/>; use
     /// <see cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3)"/>
     /// to separate them.
     /// </para>
@@ -269,7 +295,10 @@ public static partial class OpenGjk
             v[t] = bd1.S[t] - bd2.S[t];
         }
 
-        double scale2 = Math.Max(Norm2(bd1.S), Norm2(bd2.S));
+        double c1X = bd1.S[0], c1Y = bd1.S[1], c1Z = bd1.S[2];
+        double c2X = bd2.S[0], c2Y = bd2.S[1], c2Z = bd2.S[2];
+        double extent2 = 0;
+        double previousV2 = double.PositiveInfinity;
         s.NVrtx = 0;
 
         for (int k = 0; k < _castMaxIterations; k++)
@@ -281,14 +310,17 @@ public static partial class OpenGjk
 
             bd1.Support(vMinus);
             bd2.Support(v);
-            scale2 = Math.Max(scale2, Math.Max(Norm2(bd1.S), Norm2(bd2.S)));
+            extent2 = Math.Max(extent2, Math.Max(
+                Norm2(bd1.S[0] - c1X, bd1.S[1] - c1Y, bd1.S[2] - c1Z),
+                Norm2(bd2.S[0] - c2X, bd2.S[1] - c2Y, bd2.S[2] - c2Z)));
 
             w[0] = bd1.S[0] - bd2.S[0] - xX;
             w[1] = bd1.S[1] - bd2.S[1] - xY;
             w[2] = bd1.S[2] - bd2.S[2] - xZ;
 
             double vw = DotProduct(v, w);
-            if (vw > 0)
+            bool advanced = vw > 0;
+            if (advanced)
             {
                 // The plane through the support point with normal v separates x from the difference.
                 double vr = (v[0] * rX) + (v[1] * rY) + (v[2] * rZ);
@@ -336,14 +368,26 @@ public static partial class OpenGjk
 
             ClosestOnSimplex(s, v, weights);
 
-            if (s.NVrtx == 4 || Norm2(v) <= _castTolerance * _castTolerance * scale2)
+            double v2 = Norm2(v);
+            if (s.NVrtx == 4 || v2 <= _castTolerance * _castTolerance * extent2)
             {
                 break;
             }
+
+            // Without an advancement v can only shrink in exact arithmetic. When it stops
+            // shrinking, the support points (float-quantized, or nearly coplanar on a capsule
+            // side) cannot resolve the gap any further: x is within |v| of the difference and
+            // no plane separates them, so x is the hit.
+            if (!advanced && v2 >= previousV2)
+            {
+                break;
+            }
+
+            previousV2 = v2;
         }
 
-        // Reaching the iteration cap still reports a hit at the last lambda: it never lies
-        // past the true hit, which is the safe answer for continuous collision detection.
+        // Reaching the iteration cap also reports a hit at the last lambda: it never lies past
+        // the true hit, which is the safe answer for continuous collision detection.
         double length = Math.Sqrt(Norm2(nX, nY, nZ));
         if (length > 0)
         {
