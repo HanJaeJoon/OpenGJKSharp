@@ -303,6 +303,44 @@ belong to the adjacent face). On curved surfaces it lags the true normal by abou
 the origin (up to 3e-3 on the side of a capsule); far from the origin float resolution
 limits it to about 1e-2 for a unit sphere at 1e3. Both queries have `GjkWorkspace` overloads.
 
+To move a shape and slide it along what it hits, sweep, move a skin distance short of the
+contact, drop the part of the remaining motion that points into the surface, and repeat. The
+skin matters: a cast that starts touching reports fraction 0 with a zero normal, so a loop
+that moves exactly to `toi` stalls at the first contact, because every later cast starts
+touching. Keep the skin above the touch distance:
+
+``` c#
+const float skin = 1e-3f;   // gap kept from contacts
+Vector3 remaining = motion;
+for (int i = 0; i < 4; i++)
+{
+    float length = remaining.Length();
+    if (length == 0)
+    {
+        break;
+    }
+
+    var mover = new Capsule(position - halfAxis, position + halfAxis, radius);
+    if (!OpenGjk.TryCastShape(mover, obstacle, remaining, out double toi, out Vector3 normal, out _))
+    {
+        position += remaining;   // nothing in the way
+        break;
+    }
+
+    float moved = Math.Max(0, (float)toi * length - skin);
+    position += remaining * (moved / length);
+    if (normal == Vector3.Zero)
+    {
+        break;   // started touching or overlapping: separate with TryGetPenetration
+    }
+
+    remaining *= 1 - (moved / length);
+    remaining -= Vector3.Dot(remaining, normal) * normal;   // slide along the surface
+}
+```
+
+With several obstacles, cast against each and use the one with the smallest `toi`.
+
 ### Shapes and custom support functions
 
 GJK is a support-function-based algorithm, so shapes like spheres and capsules can be
