@@ -123,6 +123,8 @@ public class GjkWorkspaceTests
             OpenGjk.ComputeMinimumDistance(a, separated, workspace);
             OpenGjk.ComputeCollisionInformation(a, overlapping, workspace, out _);
             OpenGjk.ComputeMinimumDistance(cloudA, cloudB, workspace);
+            OpenGjk.HasCollision(a, separated, workspace);
+            OpenGjk.HasCollision(cloudA, cloudB, workspace);
         }
 
         const int queries = 100;
@@ -132,6 +134,8 @@ public class GjkWorkspaceTests
             OpenGjk.ComputeMinimumDistance(a, separated, workspace);
             OpenGjk.ComputeCollisionInformation(a, overlapping, workspace, out _);
             OpenGjk.ComputeMinimumDistance(cloudA, cloudB, workspace);
+            OpenGjk.HasCollision(a, separated, workspace);
+            OpenGjk.HasCollision(cloudA, cloudB, workspace);
         }
         long reusedBytes = GC.GetAllocatedBytesForCurrentThread() - before;
 

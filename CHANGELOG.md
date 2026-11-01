@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `HasCollision` stops GJK as soon as a lower bound on the distance clears the precision (or
+  an upper bound falls within it) instead of running to convergence, and returns the same
+  answer as `ComputeMinimumDistance(a, b) <= precision`. On separated pairs with a reused
+  workspace it went from 888 to 480 ns for 32-vertex clouds and from 1509 to 159 ns for a
+  sphere and a box (about 1.9x and 9.5x faster).
+
 ## [0.6.0] - 2026-08-03
 
 ### Breaking

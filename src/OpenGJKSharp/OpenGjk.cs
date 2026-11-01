@@ -86,7 +86,7 @@ public static class OpenGjk
         try
         {
             LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
-            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex, precision);
 
             return distance <= precision;
         }
@@ -130,7 +130,7 @@ public static class OpenGjk
         try
         {
             LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
-            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex, precision);
 
             return distance <= precision;
         }
@@ -491,7 +491,7 @@ public static class OpenGjk
         try
         {
             LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
-            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex, precision);
 
             return distance <= precision;
         }
@@ -701,7 +701,7 @@ public static class OpenGjk
         try
         {
             workspace.LoadShapes(a, b, out GkBody bd1, out GkBody bd2);
-            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex);
+            double distance = ComputeMinimumDistance(bd1, bd2, workspace.Simplex, precision);
 
             return distance <= precision;
         }
@@ -1238,7 +1238,13 @@ public static class OpenGjk
         return ComputeMinimumDistance(new GkPolytopeBody(bd1), new GkPolytopeBody(bd2), s);
     }
 
-    internal static double ComputeMinimumDistance(GkBody bd1, GkBody bd2, GkSimplex s)
+    /// <summary>
+    /// Runs GJK on two bodies. With a non-negative <paramref name="collisionPrecision"/> the loop
+    /// stops as soon as <c>distance &lt;= collisionPrecision</c> is settled: it then returns 0 or
+    /// <see cref="double.PositiveInfinity"/>, leaves the witnesses unset, and the result is only
+    /// good for that comparison.
+    /// </summary>
+    internal static double ComputeMinimumDistance(GkBody bd1, GkBody bd2, GkSimplex s, double collisionPrecision = -1)
     {
         uint k = 0; // Iteration counter
         const int mk = 25; // Maximum number of GJK iterations
@@ -1251,6 +1257,11 @@ public static class OpenGjk
         double[] v = scratch.V;
         double[] vMinus = scratch.VMinus;
         double norm2WMax = 0;
+        double norm2Scale = 0;
+
+        // Mapped shapes take their direction and return their support point as float, so
+        // the early-exit bounds of HasCollision carry float-sized error for them.
+        double boundTolerance = bd1 is GkMappedBody || bd2 is GkMappedBody ? 1e-5 : eps_rel;
 
         bd1.InitSupport();
         bd2.InitSupport();
@@ -1310,6 +1321,26 @@ public static class OpenGjk
             w_idx[0] = bd1.SIdx;
             w_idx[1] = bd2.SIdx;
 
+            if (collisionPrecision >= 0)
+            {
+                // dot(v, w) / |v| is a lower bound on the distance and |v| an upper bound. The
+                // margin keeps either verdict clear of rounding and of the zero clamp below, so
+                // the answer matches the converged distance compared against the precision.
+                // It scales with the coordinates, since rounding does, not with the distance.
+                norm2Scale = Math.Max(Math.Max(norm2Scale, Norm2(v)), Math.Max(Norm2(w), Math.Max(Norm2(bd1.S), Norm2(bd2.S))));
+                double normV = Math.Sqrt(Norm2(v));
+                double margin = boundTolerance * Math.Sqrt(norm2Scale);
+                if (DotProduct(v, w) > (collisionPrecision + margin) * normV)
+                {
+                    return double.PositiveInfinity;
+                }
+
+                if (normV + margin <= collisionPrecision)
+                {
+                    return 0;
+                }
+            }
+
             // Test first exit condition
             double exceedTol_rel = Norm2(v) - DotProduct(v, w);
             if (exceedTol_rel <= (eps_rel * Norm2(v)) || exceedTol_rel < eps_tot)
@@ -1357,7 +1388,10 @@ public static class OpenGjk
             Debug.WriteLine("\n * * * * * * * * * * * * MAXIMUM ITERATION NUMBER REACHED!!!  * * * * * * * * * * * * * * \n");
         }
 
-        ComputeWitnesses(bd1, bd2, s);
+        if (collisionPrecision < 0)
+        {
+            ComputeWitnesses(bd1, bd2, s);
+        }
 
         // Overlapping bodies leave the search direction at the origin up to rounding, so the
         // raw result is noise (about 1e-16 at unit scale) rather than the documented 0. The
