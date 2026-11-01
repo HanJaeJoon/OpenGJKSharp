@@ -260,6 +260,38 @@ The same check catches re-entering a query with the workspace it was called from
 querying from inside a custom `GetSupportPoint`. A failed query releases its workspace, so the
 workspace stays usable after the exception.
 
+### Ray casts and shape casts
+
+`TryCastRay` finds where a ray - the segment from `origin` to `origin + translation` - first
+hits an `ISupportMappable` shape, and `TryCastShape` sweeps one shape along a translation and
+finds where it first touches another, for continuous collision detection. Both report the hit
+as a fraction of the translation in [0, 1]:
+
+``` c#
+var box = new Box(new Vector3(5, 0, 0), halfExtents: new Vector3(1, 1, 1));
+
+if (OpenGjk.TryCastRay(box, origin: Vector3.Zero, translation: new Vector3(10, 0, 0),
+        out double fraction, out Vector3 normal))
+{
+    // fraction = 0.4: the ray hits at (4, 0, 0), normal = (-1, 0, 0)
+}
+
+var ball = new Sphere(new Vector3(0, 0, 0), radius: 1f);
+
+if (OpenGjk.TryCastShape(ball, box, translation: new Vector3(10, 0, 0),
+        out double toi, out Vector3 contactNormal, out Vector3 contactPoint))
+{
+    // toi = 0.3: moving the ball by 0.3 * translation makes it touch the box,
+    // contactNormal = (1, 0, 0) points from the ball toward the box, contactPoint = (4, 0, 0)
+}
+```
+
+The reported fraction never lies past the true time of impact, so moving by it never leaves
+the shapes overlapping. A ray that starts inside the shape, or a sweep whose shapes already
+overlap at the start, reports a hit with fraction 0 and a zero normal - use `TryGetPenetration`
+to separate such a pair. The normal is exact on flat faces; on curved surfaces it is
+accurate to about 1e-3 for unit-sized shapes. Both queries have `GjkWorkspace` overloads.
+
 ### Shapes and custom support functions
 
 GJK is a support-function-based algorithm, so shapes like spheres and capsules can be

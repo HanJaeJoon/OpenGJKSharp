@@ -48,7 +48,7 @@ namespace OpenGJKSharp;
 /// </description></item>
 /// </list>
 /// </remarks>
-public static class OpenGjk
+public static partial class OpenGjk
 {
     private const double _gkEpsilon = 2.2204460492503131e-16; // DBL_EPSILON
     private const double _precision = 1e-6;

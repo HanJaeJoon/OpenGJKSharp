@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   interior point once the bodies overlap. Available for `ISupportMappable` shapes, `Vector3[]`
   and `Vector2[]` vertex arrays, and `ReadOnlySpan<double>` coordinates, each with a
   `GjkWorkspace` variant; flat and collinear pairs are covered too.
+- `TryCastRay`, a ray cast against an `ISupportMappable` shape: it returns whether the segment
+  from an origin along a translation hits the shape, the fraction of the translation at the
+  first hit, and the outward surface normal there. A ray that starts inside the shape reports a
+  hit at fraction 0 with a zero normal. Available with a `GjkWorkspace` variant.
+- `TryCastShape`, a linear shape cast for continuous collision detection: it sweeps one
+  `ISupportMappable` shape along a translation against another and returns the fraction of the
+  translation at first contact, the contact normal (pointing from the moving shape toward the
+  static one), and the contact point. Shapes that already overlap report a hit at fraction 0
+  with a zero normal. Available with a `GjkWorkspace` variant.
+  Both casts use the GJK ray cast (van den Bergen 2004), never report a fraction past the true
+  one, and give exact normals on flat faces; on curved surfaces the normal is accurate to about
+  1e-3 for unit-sized shapes.
 
 ### Changed
 
