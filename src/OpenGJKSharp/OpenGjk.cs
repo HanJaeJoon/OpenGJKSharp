@@ -26,7 +26,8 @@ namespace OpenGJKSharp;
 /// bodies are separated, where they lie on the respective surfaces. Once the bodies overlap
 /// there is no closest pair: both witness points collapse onto a common point inside the
 /// intersection, which is not on either surface. Use <c>ComputeCollisionInformation</c> for
-/// penetration depth and contact normal instead.
+/// penetration depth and contact normal instead, or the <c>TryGetPenetration</c> overloads with
+/// <c>pointA</c>/<c>pointB</c> for contact points on the surfaces.
 /// </description></item>
 /// <item><description>
 /// <b>Contact normal.</b> It is a unit vector pointing from the first body toward the second,
@@ -284,6 +285,65 @@ public static class OpenGjk
         double info = ComputeCollisionInformation(a, b, workspace, out contactNormal);
 
         return ToPenetration(info, out depth);
+    }
+
+    /// <summary>
+    /// Determines whether two convex 2D polygons (treated as flat shapes on the z = 0 plane)
+    /// collide and, if so, by how much and where they touch.
+    /// </summary>
+    /// <param name="a">Vertices of the first polygon.</param>
+    /// <param name="b">Vertices of the second polygon.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the polygons are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first polygon toward the second.</param>
+    /// <param name="pointA">Contact point on the first polygon, or its closest point when the polygons are apart.</param>
+    /// <param name="pointB">Contact point on the second polygon, or its closest point when the polygons are apart.</param>
+    /// <returns><c>true</c> when the polygons overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3, out Vector3, out Vector3)" path="/remarks"/>
+    public static bool TryGetPenetration(Vector2[] a, Vector2[] b, out double depth, out Vector2 contactNormal,
+        out Vector2 pointA, out Vector2 pointB)
+    {
+        return TryGetPenetration(a, b, new GjkWorkspace(), out depth, out contactNormal, out pointA, out pointB);
+    }
+
+    /// <summary>
+    /// Determines whether two convex 2D polygons (treated as flat shapes on the z = 0 plane)
+    /// collide and, if so, by how much and where they touch, reusing the buffers of
+    /// <paramref name="workspace"/> instead of allocating them.
+    /// </summary>
+    /// <param name="a">Vertices of the first polygon.</param>
+    /// <param name="b">Vertices of the second polygon.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the polygons are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first polygon toward the second.</param>
+    /// <param name="pointA">Contact point on the first polygon, or its closest point when the polygons are apart.</param>
+    /// <param name="pointB">Contact point on the second polygon, or its closest point when the polygons are apart.</param>
+    /// <returns><c>true</c> when the polygons overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3, out Vector3, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    public static bool TryGetPenetration(Vector2[] a, Vector2[] b, GjkWorkspace workspace,
+        out double depth, out Vector2 contactNormal, out Vector2 pointA, out Vector2 pointB)
+    {
+        ValidateVertices(a, b);
+        ValidateWorkspace(workspace);
+
+        workspace.Occupy();
+        try
+        {
+            LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            double info = ComputeContact(bd1, bd2, workspace);
+
+            double[] normal = workspace.ContactNormal;
+            double[,] points = workspace.Simplex.Witnesses;
+            contactNormal = new Vector2((float)normal[0], (float)normal[1]);
+            pointA = new Vector2((float)points[0, 0], (float)points[0, 1]);
+            pointB = new Vector2((float)points[1, 0], (float)points[1, 1]);
+
+            return ToPenetration(info, out depth);
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -893,6 +953,80 @@ public static class OpenGjk
     }
 
     /// <summary>
+    /// Determines whether two support-mapped convex shapes collide and, if so, by how much and
+    /// where they touch.
+    /// </summary>
+    /// <param name="a">The first shape.</param>
+    /// <param name="b">The second shape.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the shapes are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first shape toward the second.</param>
+    /// <param name="pointA">Contact point on the first shape, or its closest point when the shapes are apart.</param>
+    /// <param name="pointB">Contact point on the second shape, or its closest point when the shapes are apart.</param>
+    /// <returns><c>true</c> when the shapes overlap or touch exactly.</returns>
+    /// <remarks>
+    /// <para>
+    /// The same query as <see cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3)"/>
+    /// (same depth and normal), also reporting the contact points.
+    /// </para>
+    /// <para>
+    /// While the bodies overlap, <paramref name="pointA"/> is the deepest point of the first body
+    /// along <paramref name="contactNormal"/> and <paramref name="pointB"/> the deepest point of the
+    /// second body against it. Both lie on the surface of their own body, and they are separated
+    /// along the normal by exactly the depth: <c>dot(pointA - pointB, contactNormal) == depth</c>,
+    /// up to rounding. Where flat faces meet, the two points face each other inside the contact
+    /// region; on a curved surface the point is the body's support point along the normal. When
+    /// the normal is arbitrary (concentric bodies) the points follow whatever normal is returned.
+    /// </para>
+    /// <para>
+    /// When the bodies are apart, the points are their closest points - the witness points
+    /// <c>ComputeMinimumDistance</c> reports - and when they touch exactly, both are the touching
+    /// point. Unlike the witness points of <c>ComputeMinimumDistance</c>, which collapse inside
+    /// the overlap, they are meaningful in every case.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="a"/> or <paramref name="b"/> is null.</exception>
+    public static bool TryGetPenetration(ISupportMappable a, ISupportMappable b, out double depth,
+        out Vector3 contactNormal, out Vector3 pointA, out Vector3 pointB)
+    {
+        return TryGetPenetration(a, b, new GjkWorkspace(), out depth, out contactNormal, out pointA, out pointB);
+    }
+
+    /// <summary>
+    /// Determines whether two support-mapped convex shapes collide and, if so, by how much and
+    /// where they touch, reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// </summary>
+    /// <param name="a">The first shape.</param>
+    /// <param name="b">The second shape.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the shapes are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first shape toward the second.</param>
+    /// <param name="pointA">Contact point on the first shape, or its closest point when the shapes are apart.</param>
+    /// <param name="pointB">Contact point on the second shape, or its closest point when the shapes are apart.</param>
+    /// <returns><c>true</c> when the shapes overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3, out Vector3, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentNullException"><paramref name="a"/>, <paramref name="b"/> or <paramref name="workspace"/> is null.</exception>
+    public static bool TryGetPenetration(ISupportMappable a, ISupportMappable b, GjkWorkspace workspace,
+        out double depth, out Vector3 contactNormal, out Vector3 pointA, out Vector3 pointB)
+    {
+        ValidateShapes(a, b);
+        ValidateWorkspace(workspace);
+
+        workspace.Occupy();
+        try
+        {
+            workspace.LoadShapes(a, b, out GkBody bd1, out GkBody bd2);
+            double info = ComputeContact(bd1, bd2, workspace);
+
+            ReadContact(workspace, out contactNormal, out pointA, out pointB);
+            return ToPenetration(info, out depth);
+        }
+        finally
+        {
+            workspace.Release();
+        }
+    }
+
+    /// <summary>
     /// Determines whether two convex polytopes collide and, if so, by how much.
     /// </summary>
     /// <param name="a">Vertices of the first body.</param>
@@ -924,6 +1058,58 @@ public static class OpenGjk
         double info = ComputeCollisionInformation(a, b, workspace, out contactNormal);
 
         return ToPenetration(info, out depth);
+    }
+
+    /// <summary>
+    /// Determines whether two convex polytopes collide and, if so, by how much and where they touch.
+    /// </summary>
+    /// <param name="a">Vertices of the first body.</param>
+    /// <param name="b">Vertices of the second body.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the bodies are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first body toward the second.</param>
+    /// <param name="pointA">Contact point on the first body, or its closest point when the bodies are apart.</param>
+    /// <param name="pointB">Contact point on the second body, or its closest point when the bodies are apart.</param>
+    /// <returns><c>true</c> when the bodies overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3, out Vector3, out Vector3)" path="/remarks"/>
+    public static bool TryGetPenetration(Vector3[] a, Vector3[] b, out double depth, out Vector3 contactNormal,
+        out Vector3 pointA, out Vector3 pointB)
+    {
+        return TryGetPenetration(a, b, new GjkWorkspace(), out depth, out contactNormal, out pointA, out pointB);
+    }
+
+    /// <summary>
+    /// Determines whether two convex polytopes collide and, if so, by how much and where they
+    /// touch, reusing the buffers of <paramref name="workspace"/> instead of allocating them.
+    /// </summary>
+    /// <param name="a">Vertices of the first body.</param>
+    /// <param name="b">Vertices of the second body.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the bodies are apart or touch exactly.</param>
+    /// <param name="contactNormal">Contact normal, pointing from the first body toward the second.</param>
+    /// <param name="pointA">Contact point on the first body, or its closest point when the bodies are apart.</param>
+    /// <param name="pointB">Contact point on the second body, or its closest point when the bodies are apart.</param>
+    /// <returns><c>true</c> when the bodies overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3, out Vector3, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    public static bool TryGetPenetration(Vector3[] a, Vector3[] b, GjkWorkspace workspace,
+        out double depth, out Vector3 contactNormal, out Vector3 pointA, out Vector3 pointB)
+    {
+        ValidateVertices(a, b);
+        ValidateWorkspace(workspace);
+
+        workspace.Occupy();
+        try
+        {
+            LoadVertices(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            double info = ComputeContact(bd1, bd2, workspace);
+
+            ReadContact(workspace, out contactNormal, out pointA, out pointB);
+            return ToPenetration(info, out depth);
+        }
+        finally
+        {
+            workspace.Release();
+        }
     }
 
     /// <summary>
@@ -964,6 +1150,100 @@ public static class OpenGjk
         double info = ComputeCollisionInformation(a, b, workspace, contactNormal);
 
         return ToPenetration(info, out depth);
+    }
+
+    /// <summary>
+    /// Determines whether two convex polytopes given in double precision collide and,
+    /// if so, by how much and where they touch.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="contactNormal">Receives the contact normal, pointing from the first body toward the second. Must hold at least 3 elements.</param>
+    /// <param name="pointA">Receives the contact point on the first body, or its closest point when the bodies are apart. Must hold at least 3 elements.</param>
+    /// <param name="pointB">Receives the contact point on the second body, or its closest point when the bodies are apart. Must hold at least 3 elements.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the bodies are apart or touch exactly.</param>
+    /// <returns><c>true</c> when the bodies overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3, out Vector3, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, a coordinate is not finite,
+    /// or an output span is shorter than 3 elements.</exception>
+    public static bool TryGetPenetration(ReadOnlySpan<double> a, ReadOnlySpan<double> b,
+        Span<double> contactNormal, Span<double> pointA, Span<double> pointB, out double depth)
+    {
+        return TryGetPenetration(a, b, new GjkWorkspace(), contactNormal, pointA, pointB, out depth);
+    }
+
+    /// <summary>
+    /// Determines whether two convex polytopes given in double precision collide and, if so,
+    /// by how much and where they touch, reusing the buffers of <paramref name="workspace"/>
+    /// instead of allocating them.
+    /// </summary>
+    /// <param name="a">Coordinates of the first body as consecutive (x, y, z) triples.</param>
+    /// <param name="b">Coordinates of the second body as consecutive (x, y, z) triples.</param>
+    /// <param name="workspace">Scratch memory reused across queries. Must not be shared by concurrent queries.</param>
+    /// <param name="contactNormal">Receives the contact normal, pointing from the first body toward the second. Must hold at least 3 elements.</param>
+    /// <param name="pointA">Receives the contact point on the first body, or its closest point when the bodies are apart. Must hold at least 3 elements.</param>
+    /// <param name="pointB">Receives the contact point on the second body, or its closest point when the bodies are apart. Must hold at least 3 elements.</param>
+    /// <param name="depth">The penetration depth as a positive value, or 0 when the bodies are apart or touch exactly.</param>
+    /// <returns><c>true</c> when the bodies overlap or touch exactly.</returns>
+    /// <inheritdoc cref="TryGetPenetration(ISupportMappable, ISupportMappable, out double, out Vector3, out Vector3, out Vector3)" path="/remarks"/>
+    /// <exception cref="ArgumentNullException"><paramref name="workspace"/> is null.</exception>
+    /// <exception cref="ArgumentException">A span is empty, its length is not a multiple of 3, a coordinate is not finite,
+    /// or an output span is shorter than 3 elements.</exception>
+    public static bool TryGetPenetration(ReadOnlySpan<double> a, ReadOnlySpan<double> b, GjkWorkspace workspace,
+        Span<double> contactNormal, Span<double> pointA, Span<double> pointB, out double depth)
+    {
+        ValidateCoordinates(a, b);
+        ValidateWorkspace(workspace);
+        ValidateOutput(contactNormal, nameof(contactNormal));
+        ValidateOutput(pointA, nameof(pointA));
+        ValidateOutput(pointB, nameof(pointB));
+
+        workspace.Occupy();
+        try
+        {
+            LoadCoordinates(workspace, a, b, out GkBody bd1, out GkBody bd2);
+            double info = ComputeContact(bd1, bd2, workspace);
+
+            double[] normal = workspace.ContactNormal;
+            double[,] points = workspace.Simplex.Witnesses;
+            for (int t = 0; t < 3; t++)
+            {
+                contactNormal[t] = normal[t];
+                pointA[t] = points[0, t];
+                pointB[t] = points[1, t];
+            }
+
+            return ToPenetration(info, out depth);
+        }
+        finally
+        {
+            workspace.Release();
+        }
+    }
+
+    // Collision information with the witnesses turned into contact points, for the
+    // TryGetPenetration overloads that report them.
+    private static double ComputeContact(GkBody bd1, GkBody bd2, GjkWorkspace workspace)
+    {
+        GkSimplex simplex = workspace.Simplex;
+        double distance = ComputeMinimumDistance(bd1, bd2, simplex);
+
+        double[] normal = workspace.ContactNormal;
+        EpaPolytope poly = workspace.Epa;
+        ComputeCollisionInformation(bd1, bd2, simplex, poly, ref distance, normal);
+        SetContactPoints(bd1, bd2, simplex, poly, distance, normal);
+
+        return distance;
+    }
+
+    private static void ReadContact(GjkWorkspace workspace, out Vector3 contactNormal,
+        out Vector3 pointA, out Vector3 pointB)
+    {
+        double[] normal = workspace.ContactNormal;
+        double[,] points = workspace.Simplex.Witnesses;
+        contactNormal = new Vector3((float)normal[0], (float)normal[1], (float)normal[2]);
+        pointA = new Vector3((float)points[0, 0], (float)points[0, 1], (float)points[0, 2]);
+        pointB = new Vector3((float)points[1, 0], (float)points[1, 1], (float)points[1, 2]);
     }
 
     // Collision information is signed - negative depth on collision, positive separation
@@ -3704,6 +3984,50 @@ public static class OpenGjk
         }
 
         distance = -(poly.BestDepth > faceDistance ? poly.BestDepth : faceDistance);
+    }
+
+    // Turns the witnesses of a penetrating pair into contact points: the deepest point of each
+    // body along the contact normal. The passes above leave the barycentric image of the
+    // origin's projection onto the best face (or edge), which lies on a body's support plane
+    // only where that face is flush with the body - true for polyhedra, but on a curved shape
+    // the face is a chord and its image sits inside. A witness off the plane by more than
+    // rounding is therefore replaced with the support point itself, which is on the surface by
+    // definition; one within rounding is moved onto the plane, keeping its place in the contact
+    // region. Either way dot(pointA - pointB, normal) becomes the support distance along the
+    // normal, which is the depth every pass reports.
+    private static void SetContactPoints(GkBody bd1, GkBody bd2, GkSimplex simplex, EpaPolytope poly,
+        double distance, double[] contactNormal)
+    {
+        // Apart or exactly touching: the witnesses already lie on both surfaces.
+        if (!(distance < 0))
+        {
+            return;
+        }
+
+        SupportEpa(bd1, bd2, poly, contactNormal, poly.NewVertex, poly.NewVertexIdx);
+        MoveOntoSupportPlane(simplex, 0, poly.SupportA, contactNormal);
+        MoveOntoSupportPlane(simplex, 1, poly.SupportB, contactNormal);
+    }
+
+    private static void MoveOntoSupportPlane(GkSimplex simplex, int body, double[] support, double[] normal)
+    {
+        double offset = 0;
+        double scale = 1;
+        for (int c = 0; c < 3; ++c)
+        {
+            offset += (support[c] - simplex.Witnesses[body, c]) * normal[c];
+            scale += Math.Abs(support[c]);
+        }
+
+        // Single-precision input leaves the vertices of a rotated face off its plane by about
+        // 1e-7 relative, so this tolerance has to sit above that to recognize a flush face.
+        bool flush = Math.Abs(offset) <= scale * _precision;
+        for (int c = 0; c < 3; ++c)
+        {
+            simplex.Witnesses[body, c] = flush
+                ? simplex.Witnesses[body, c] + offset * normal[c]
+                : support[c];
+        }
     }
 
     #endregion

@@ -103,6 +103,24 @@ if (OpenGjk.TryGetPenetration(body, ground, out double depth, out Vector3 normal
 }
 ```
 
+Add `pointA`/`pointB` to also get the contact points - the deepest point of each body along
+the normal, each on its own body's surface, so that `dot(pointA - pointB, normal) == depth`:
+
+``` c#
+if (OpenGjk.TryGetPenetration(a, b, out double depth, out Vector3 normal,
+        out Vector3 pointA, out Vector3 pointB))
+{
+    // pointA is on a's surface, pointB on b's, depth apart along the normal.
+    Vector3 contact = (pointA + pointB) / 2;
+}
+```
+
+Where flat faces meet, the two points face each other inside the contact region; on a curved
+surface the point is the body's support point along the normal. When the bodies are apart
+(`false`), they are the closest points, the same as `ComputeMinimumDistance` reports. Every
+`TryGetPenetration` overload has this variant (`Vector2[]` polygons return `Vector2` points,
+`ReadOnlySpan<double>` coordinates write them to 3-element spans).
+
 For exactly concentric bodies every direction is a valid minimum translation, so the
 returned normal direction is arbitrary (still unit length).
 
@@ -126,7 +144,8 @@ Console.WriteLine($"Closest points: {closestA} <-> {closestB}");
 The closest points are only meaningful while the bodies are separated, where they lie on
 the respective surfaces. Once the bodies overlap there is no closest pair: the distance is
 0 and both witness points collapse onto a common point inside the intersection, which is
-not on either surface. Use `ComputeCollisionInformation` for that case.
+not on either surface. Use `ComputeCollisionInformation` for that case, or `TryGetPenetration`
+with `pointA`/`pointB` for contact points on the surfaces.
 
 ### 2D polygons and other flat geometry
 

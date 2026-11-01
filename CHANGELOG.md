@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `TryGetPenetration` overloads that also return the contact points (`pointA`, `pointB`): the
+  deepest point of each body along the contact normal, each on its own body's surface and
+  separated along the normal by the depth (`dot(pointA - pointB, contactNormal) == depth`).
+  When the bodies are apart they are the closest points, as `ComputeMinimumDistance` reports.
+  Previously the only witness points came from `ComputeMinimumDistance`, which collapse onto an
+  interior point once the bodies overlap. Available for `ISupportMappable` shapes, `Vector3[]`
+  and `Vector2[]` vertex arrays, and `ReadOnlySpan<double>` coordinates, each with a
+  `GjkWorkspace` variant; flat and collinear pairs are covered too.
+
 ### Changed
 
 - `HasCollision` stops GJK as soon as a lower bound on the distance clears the precision (or
